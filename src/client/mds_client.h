@@ -195,7 +195,7 @@ class MDSClient : public MDSClientBase,
      */
     LIBCURVE_ERROR OpenFile(const std::string &filename,
                             const UserInfo_t &userinfo, FInfo_t *fi,
-                            LeaseSession *lease);
+                            LeaseSession *lease, const OpenFlags& openflags);
 
     /**
      * 获取copysetid对应的serverlist信息并更新到metacache
@@ -352,6 +352,9 @@ class MDSClient : public MDSClientBase,
      * 成功返回LIBCURVE_ERROR::OK,如果认证失败返回LIBCURVE_ERROR::AUTHFAIL，
      *          否则返回LIBCURVE_ERROR::FAILED
      */
+    //* 客户端 通过 session 续约的同时，mds 的writer_lock 中会保存 writer 中最近一次活跃的时间
+    //* 为了避免 mds 频繁调用 Writer_Lock::UpdateWriterLock, 这里在rpc时加入，如果不是当前的
+    //* 对应的文件的 writer,则不调用 Writer_Lock::UpdateWriterLock()
     LIBCURVE_ERROR RefreshSession(const std::string &filename,
                                   const UserInfo_t &userinfo,
                                   const std::string &sessionid,
@@ -367,7 +370,8 @@ class MDSClient : public MDSClientBase,
      */
     LIBCURVE_ERROR CloseFile(const std::string &filename,
                              const UserInfo_t &userinfo,
-                             const std::string &sessionid);
+                             const std::string &sessionid,
+                             const bool iswriter);
 
     /**
      * @brief 创建clone文件

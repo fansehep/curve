@@ -215,7 +215,7 @@ int FileClient::Open(const std::string& filename,
         return -1;
     }
 
-    int ret = fileserv->Open(filename, userinfo);
+    int ret = fileserv->Open(filename, userinfo, openflags);
     if (ret != LIBCURVE_ERROR::OK) {
         LOG(ERROR) << "Open file failed, filename: " << filename
                    << ", retCode: " << ret;

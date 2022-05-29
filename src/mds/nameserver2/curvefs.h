@@ -41,6 +41,7 @@
 #include "src/common/authenticator.h"
 #include "src/mds/nameserver2/allocstatistic/alloc_statistic.h"
 #include "src/mds/snapshotcloneclient/snapshotclone_client.h"
+#include "src/mds/nameserver2/writer_lock.h"
 using curve::common::Authenticator;
 using curve::mds::snapshotcloneclient::SnapshotCloneClient;
 
@@ -110,7 +111,8 @@ class CurveFS {
               std::shared_ptr<AllocStatistic> allocStatistic,
               const struct CurveFSOption &curveFSOptions,
               std::shared_ptr<Topology> topology,
-              std::shared_ptr<SnapshotCloneClient> snapshotCloneClient);
+              std::shared_ptr<SnapshotCloneClient> snapshotCloneClient,
+              std::shared_ptr<Writer_Lock> writerlock);
 
     /**
      *  @brief Run session manager
@@ -369,6 +371,10 @@ class CurveFS {
                         const std::string &clientIP,
                         ProtoSession *protoSession,
                         FileInfo  *fileInfo,
+                        uint32_t clientport,
+                        uint64_t& permission,
+                        uint64_t data,
+                        bool tobewriter,
                         CloneSourceSegment* cloneSourceSegment = nullptr);
 
     /**
@@ -379,7 +385,9 @@ class CurveFS {
      */
     StatusCode CloseFile(const std::string &fileName,
                          const std::string &sessionID,
-                         const std::string &clientIP, uint32_t clientPort);
+                         const std::string &clientIP, 
+                         uint32_t clientPort,
+                         const bool iswriter);
 
     /**
      *  @brief update the valid period of the session
@@ -400,7 +408,8 @@ class CurveFS {
                               const std::string &clientIP,
                               uint32_t clientPort,
                               const std::string &clientVersion,
-                              FileInfo  *fileInfo);
+                              FileInfo  *fileInfo,
+                              bool iswriter);
 
     /**
      * @brief Clone a file. Clone file can only be created by the root user currently //NOLINT
@@ -583,6 +592,12 @@ class CurveFS {
      */
     uint64_t GetMaxFileLength();
 
+        //* 更新存储在 etcd 中的writer 的最新一个session会话时间
+    //* 每当 RPC 通过远程调用RefreshSession 时，它也将随之调用
+    bool UpdateEtcdWriterLastTime(const std::string& filename, 
+                                  const std::string& ClientIp,
+                                  uint32_t Port,
+                                  uint64_t data);
  private:
     CurveFS() = default;
 
@@ -764,7 +779,6 @@ class CurveFS {
 
     bool IsDefaultThrottleParams(const FileThrottleParams &params,
                                  uint64_t length) const;
-
  private:
     FileInfo rootFileInfo_;
     std::shared_ptr<NameServerStorage> storage_;
@@ -775,6 +789,8 @@ class CurveFS {
     std::shared_ptr<AllocStatistic> allocStatistic_;
     std::shared_ptr<Topology> topology_;
     std::shared_ptr<SnapshotCloneClient> snapshotCloneClient_;
+    //* writer_lock   
+    std::shared_ptr<Writer_Lock> writerlock_;
     struct RootAuthOption       rootAuthOptions_;
     ThrottleOption throttleOption_;
 

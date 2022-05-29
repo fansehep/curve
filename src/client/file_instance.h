@@ -65,6 +65,7 @@ class CURVE_CACHELINE_ALIGNMENT FileInstance {
      */
     int Open(const std::string& filename,
              const UserInfo& userinfo,
+             const OpenFlags& openflags,
              std::string* sessionId = nullptr);
 
     /**
@@ -78,6 +79,7 @@ class CURVE_CACHELINE_ALIGNMENT FileInstance {
     int ReOpen(const std::string& filenam,
                const std::string& sessionId,
                const UserInfo& userInfo,
+               const OpenFlags& openflags,
                std::string* newSessionId);
     /**
      * 同步模式读
@@ -163,7 +165,15 @@ class CURVE_CACHELINE_ALIGNMENT FileInstance {
         const FileServiceOption& opt, std::shared_ptr<MDSClient> mdsclient,
         const std::string& filename, const UserInfo& userInfo,
         const OpenFlags& openflags = DefaultReadonlyOpenFlags());
-
+    /*
+      writer 可写，polardb 的那个工具也可写
+    */
+    bool CanWrite() {
+        return this->finfo_.userinfo.permission == 1 || this->finfo_.userinfo.permission == 2;
+    }
+    void SetFdPermission(uint64_t permission) {
+        this->finfo_.userinfo.permission = permission;
+    }
  private:
     void StopLease();
 

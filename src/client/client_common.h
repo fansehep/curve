@@ -325,7 +325,7 @@ inline bool CloneSourceInfo::IsSegmentAllocated(uint64_t offset) const {
 }
 
 inline std::ostream& operator<<(std::ostream& os, const OpenFlags& flags) {
-    os << "[exclusive: " << std::boolalpha << flags.exclusive << "]";
+    os << "[exclusive: " << std::boolalpha << flags.IsExeclusive() << "]";
 
     return os;
 }

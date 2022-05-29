@@ -103,6 +103,7 @@ class MDSClientBase {
     void OpenFile(const std::string& filename,
                   const UserInfo_t& userinfo,
                   OpenFileResponse* response,
+                  const OpenFlags& openflags,
                   brpc::Controller* cntl,
                   brpc::Channel* channel);
 
@@ -138,6 +139,7 @@ class MDSClientBase {
                    const UserInfo_t& userinfo,
                    const std::string& sessionid,
                    CloseFileResponse* response,
+                   const bool iswriter,
                    brpc::Controller* cntl,
                    brpc::Channel* channel);
     /**

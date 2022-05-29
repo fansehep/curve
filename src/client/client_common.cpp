@@ -31,8 +31,8 @@ OpenFlags DefaultReadonlyOpenFlags() {
     static OpenFlags readonlyFlags;
     static std::once_flag onceFlag;
 
-    std::call_once(onceFlag, []() { readonlyFlags.exclusive = false; });
-
+    // std::call_once(onceFlag, []() { readonlyFlags.IsExeclusive() = false; });
+    std::call_once(onceFlag, [](){ readonlyFlags.SetExeclusive(false);});
     return readonlyFlags;
 }
 

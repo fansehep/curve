@@ -92,6 +92,9 @@ message FileInfo {
     optional    uint64      stripeCount = 16;
 
     optional    FileThrottleParams throttleParams = 17;
+    optional    ClientInfo  writer = 18;
+    // polardb 需要一个工具同时也可以同时写
+    optional    ClientInfo  fakeWriter = 19;
 }
 
 // status code
@@ -420,6 +423,13 @@ message OpenFileRequest {
     optional string signature = 3;
     required uint64 date = 4;
     optional string clientVersion = 5;
+    //* make the MDS know isfakewriter
+    optional bool isFakeWriter = 6;
+    //* only the client want to be writer
+    //* the mds will try Lock
+    optional bool tobewriter = 7;
+    optional string clientIP = 8;
+    optional uint32 clientPort = 9;
 };
 
 // statusCode返回值，详见StatusCode定义:
@@ -433,6 +443,7 @@ message OpenFileResponse {
     optional ProtoSession protoSession = 2;
     optional FileInfo   fileInfo = 3;
     optional CloneSourceSegment cloneSourceSegment = 4;
+    optional uint64 permission = 5;
 };
 
 message CloseFileRequest {
@@ -445,6 +456,7 @@ message CloseFileRequest {
 
     optional string     clientIP = 6;
     optional uint32     clientPort = 7;
+    optional bool       iswriter = 8;
 };
 
 // statusCode返回值，详见StatusCode定义:
@@ -467,6 +479,7 @@ message ReFreshSessionRequest {
     optional string     clientVersion = 6;
     optional string     clientIP = 7;
     optional uint32     clientPort = 8;
+    optional bool       iswriter = 9;
 }
 
 // statusCode返回值，详见StatusCode定义:
@@ -579,6 +592,12 @@ message UpdateFileThrottleParamsRequest {
 
 message UpdateFileThrottleParamsResponse {
     required StatusCode statusCode = 1;
+}
+//* we need the writerinfo to help us serialization and deserialzation
+message WriterInfo {
+    required string clientip = 1;
+    required uint32 clientport = 2;
+    required uint64 lastreceivetime = 3;
 }
 
 service CurveFSService {

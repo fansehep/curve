@@ -169,18 +169,21 @@ int FileInstance::AioDiscard(CurveAioContext* aioctx) {
 //    等待一段时间再去Open，如果依然失败，就向上层返回失败。
 int FileInstance::Open(const std::string& filename,
                        const UserInfo& userinfo,
+                       const OpenFlags& openflags,
                        std::string* sessionId) {
     LeaseSession_t  lease;
     int ret = LIBCURVE_ERROR::FAILED;
 
-    ret = mdsclient_->OpenFile(filename, finfo_.userinfo, &finfo_, &lease);
+    ret = mdsclient_->OpenFile(filename, finfo_.userinfo, &finfo_, &lease, openflags);
     if (ret == LIBCURVE_ERROR::OK) {
         iomanager4file_.UpdateFileThrottleParams(finfo_.throttleParams);
         ret = leaseExecutor_->Start(finfo_, lease) ? LIBCURVE_ERROR::OK
-                                                   : LIBCURVE_ERROR::FAILED;
+                                                   : LIBCURVE_ERROR::FAILED;                                                   
         if (nullptr != sessionId) {
             sessionId->assign(lease.sessionID);
         }
+        //* 需要在这里存储权限信息
+        this->finfo_.userinfo.permission = finfo_.userinfo.permission;
     }
     return -ret;
 }
@@ -188,8 +191,9 @@ int FileInstance::Open(const std::string& filename,
 int FileInstance::ReOpen(const std::string& filename,
                          const std::string& sessionId,
                          const UserInfo& userInfo,
+                         const OpenFlags& openflags,
                          std::string* newSessionId) {
-    return Open(filename, userInfo, newSessionId);
+    return Open(filename, userInfo, openflags, newSessionId);
 }
 
 int FileInstance::GetFileInfo(const std::string& filename, FInfo_t* fi) {
@@ -206,7 +210,7 @@ int FileInstance::Close() {
     StopLease();
 
     LIBCURVE_ERROR ret =
-        mdsclient_->CloseFile(finfo_.fullPathName, finfo_.userinfo, "");
+        mdsclient_->CloseFile(finfo_.fullPathName, finfo_.userinfo, "", (finfo_.userinfo.permission == 1));
     return -ret;
 }
 

@@ -119,7 +119,8 @@ bool CurveFS::Init(std::shared_ptr<NameServerStorage> storage,
                 std::shared_ptr<AllocStatistic> allocStatistic,
                 const struct CurveFSOption &curveFSOptions,
                 std::shared_ptr<Topology> topology,
-                std::shared_ptr<SnapshotCloneClient> snapshotCloneClient) {
+                std::shared_ptr<SnapshotCloneClient> snapshotCloneClient,
+                std::shared_ptr<Writer_Lock> writerlock) {
     startTime_ = std::chrono::steady_clock::now();
     storage_ = storage;
     InodeIDGenerator_ = InodeIDGenerator;
@@ -135,7 +136,7 @@ bool CurveFS::Init(std::shared_ptr<NameServerStorage> storage,
     maxFileLength_ = curveFSOptions.maxFileLength;
     topology_ = topology;
     snapshotCloneClient_ = snapshotCloneClient;
-
+    writerlock_ = writerlock;
     InitRootFile();
     bool ret = InitRecycleBinDir();
     if (!ret) {
@@ -173,7 +174,7 @@ void CurveFS::InitRootFile(void) {
 StatusCode CurveFS::WalkPath(const std::string &fileName,
                         FileInfo *fileInfo, std::string  *lastEntry) const  {
     assert(lastEntry != nullptr);
-
+    //* /home/fan/GitHub => "home" "fan" "GitHub"
     std::vector<std::string> paths;
     ::curve::common::SplitString(fileName, "/", &paths);
 
@@ -1586,11 +1587,22 @@ StatusCode CurveFS::GetSnapShotFileSegment(
         return StatusCode::KInternalError;
     }
 }
-
+/*
+*   0) 客户端 open 的时候，mds 的 writer_lock 要做一个判断
+*   1) 他要挂载的文件现在有无 wirter
+*   2)    无 => 当前的writer 直接成为 当前file的 writer
+*   3)    有 => 验证一下当前文件的writer的会话心跳是否正常
+*   4)         => 正常 => 他是 reader
+*   5)         => 不正常 => 他是 writer              
+*/
 StatusCode CurveFS::OpenFile(const std::string &fileName,
                              const std::string &clientIP,
                              ProtoSession *protoSession,
                              FileInfo  *fileInfo,
+                             uint32_t clientport,
+                             uint64_t& permission,
+                             uint64_t date,
+                             bool tobewriter,
                              CloneSourceSegment* cloneSourceSegment) {
     // check the existence of the file
     StatusCode ret;
@@ -1608,9 +1620,13 @@ StatusCode CurveFS::OpenFile(const std::string &fileName,
                    << ", errName = " << StatusCode_Name(ret);
         return ret;
     }
-
     LOG(INFO) << "FileInfo, " << fileInfo->DebugString();
-
+    //* 通过文件锁获得权限
+    //* 如果他不想成为writer, 那就不LOCK,
+    //* 默认权限就是 Reader
+    if (tobewriter == true) {
+        permission = static_cast<uint64_t>(writerlock_->Lock(fileName, clientIP, clientport, date));
+    }
     if (fileInfo->filetype() != FileType::INODE_PAGEFILE) {
         LOG(ERROR) << "OpenFile file type not support, fileName = " << fileName
                    << ", clientIP = " << clientIP
@@ -1631,7 +1647,8 @@ StatusCode CurveFS::OpenFile(const std::string &fileName,
 StatusCode CurveFS::CloseFile(const std::string &fileName,
                               const std::string &sessionID,
                               const std::string &clientIP,
-                              uint32_t clientPort) {
+                              uint32_t clientPort,
+                              const bool iswriter) {
     // check the existence of the file
     FileInfo  fileInfo;
     StatusCode ret;
@@ -1649,7 +1666,11 @@ StatusCode CurveFS::CloseFile(const std::string &fileName,
                    << ", errName = " << StatusCode_Name(ret);
         return  ret;
     }
-
+    //* only the writer think he is writer, then will Unlock
+    //* because only the writer hold the writer_lock
+    if (iswriter == true) {
+        writerlock_->Unlock(fileName, clientIP, clientPort);
+    }
     // remove file record
     fileRecordManager_->RemoveFileRecord(fileName, clientIP, clientPort);
 
@@ -1663,7 +1684,8 @@ StatusCode CurveFS::RefreshSession(const std::string &fileName,
                             const std::string &clientIP,
                             uint32_t clientPort,
                             const std::string &clientVersion,
-                            FileInfo  *fileInfo) {
+                            FileInfo  *fileInfo,
+                            bool iswriter) {
     // check the existence of the file
     StatusCode ret;
     ret = GetFileInfo(fileName, fileInfo);
@@ -1693,7 +1715,10 @@ StatusCode CurveFS::RefreshSession(const std::string &fileName,
     // update file records
     fileRecordManager_->UpdateFileRecord(fileName, clientVersion, clientIP,
                                          clientPort);
-
+    //* 只有client 认为自己是 writer, 才去更新writer
+    if (iswriter) {
+        UpdateEtcdWriterLastTime(fileName, clientIP, clientPort, date);
+    }
     return StatusCode::kOK;
 }
 
@@ -2492,6 +2517,12 @@ bool CurveFS::IsDefaultThrottleParams(const FileThrottleParams &params,
     return true;
 }
 
+bool CurveFS::UpdateEtcdWriterLastTime(const std::string& filename,
+                                       const std::string& ClientIp,
+                                       uint32_t Port,
+                                       uint64_t date) {
+    return this->writerlock_->UpdateWriterLock(filename, ClientIp, Port, date);   
+}
 CurveFS &kCurveFS = CurveFS::GetInstance();
 
 uint64_t GetOpenFileNum(void *varg) {

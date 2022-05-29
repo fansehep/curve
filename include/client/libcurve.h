@@ -358,7 +358,12 @@ typedef struct UserInfo {
     std::string password;
 
     UserInfo() = default;
-
+    uint64_t permission;
+    enum class job {
+        Reader, // 0
+        Writer, // 1
+        FakeWriter, // 2
+    };
     UserInfo(const std::string& own, const std::string& pwd = "")
       : owner(own), password(pwd) {}
 
@@ -372,9 +377,50 @@ inline bool operator==(const UserInfo& lhs, const UserInfo& rhs) {
 }
 
 struct OpenFlags {
-    bool exclusive;
-
-    OpenFlags() : exclusive(true) {}
+    // bool exclusive;
+    // // fakewriter, default false it is normal client
+    // bool fake;
+    // bool wantobewriter;
+    // OpenFlags() : exclusive(true), fake(false) {}
+ public:
+    //* default don't but you can set it
+    bool IsWantToBeWriter() const {
+        return (ironman_ >> WANT_TO_BE_WRITER) & 1;
+    }
+    void SetWantToBeWriter(bool re) {
+        if (re) {
+            ironman_ |= (1 << WANT_TO_BE_WRITER);
+        } else {
+            ironman_ &= ~(1 << WANT_TO_BE_WRITER);
+        }
+    }
+    bool IsExeclusive() const {
+        return (ironman_ >> EXCLUSIVE) & 1;
+    }
+    void SetExeclusive(bool re) {
+        if (re) {
+            ironman_ |= (1 << EXCLUSIVE);
+        } else {
+            ironman_ &= ~(1 << EXCLUSIVE);
+        }    
+    }
+    bool IsFakeWriter() const {
+        return (ironman_ >> FAKE_WRITER) & 1;
+    }
+    void SetFakeWriter(bool re) {
+        if (re) {
+            ironman_ |= (1 << FAKE_WRITER);
+        } else {
+            ironman_ &= ~(1 << FAKE_WRITER);
+        }
+    }
+ private:
+    enum {
+        WANT_TO_BE_WRITER = 1,
+        FAKE_WRITER = 2,
+        EXCLUSIVE = 3,
+    };
+    uint64_t ironman_ = 0;    
 };
 
 class CurveClient {
