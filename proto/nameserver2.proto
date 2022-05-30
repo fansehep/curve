@@ -92,9 +92,6 @@ message FileInfo {
     optional    uint64      stripeCount = 16;
 
     optional    FileThrottleParams throttleParams = 17;
-    optional    ClientInfo  writer = 18;
-    // polardb 需要一个工具同时也可以同时写
-    optional    ClientInfo  fakeWriter = 19;
 }
 
 // status code

@@ -43,6 +43,60 @@ enum FileType {
     INODE_SNAPSHOT_PAGEFILE = 4
 };
 
+struct OpenFlags {
+    // bool exclusive;
+    // // fakewriter, default false it is normal client
+    // bool fake;
+    // bool wantobewriter;
+    // OpenFlags() : exclusive(true), fake(false) {}
+ public:
+    //* default don't but you can set it
+    bool IsWantToBeWriter() const {
+        return (ironman_ >> WANT_TO_BE_WRITER) & 1;
+    }
+    void SetWantToBeWriter(bool re) {
+        if (re) {
+            ironman_ |= (1 << WANT_TO_BE_WRITER);
+        } else {
+            ironman_ &= ~(1 << WANT_TO_BE_WRITER);
+        }
+    }
+    bool IsExeclusive() const {
+        return (ironman_ >> EXCLUSIVE) & 1;
+    }
+    void SetExeclusive(bool re) {
+        if (re) {
+            ironman_ |= (1 << EXCLUSIVE);
+        } else {
+            ironman_ &= ~(1 << EXCLUSIVE);
+        }    
+    }
+    bool IsFakeWriter() const {
+        return (ironman_ >> FAKE_WRITER) & 1;
+    }
+    void SetFakeWriter(bool re) {
+        //* fakewriter 和 writer 只能存一个
+        if(IsWantToBeWriter()) {
+            re = false;
+        }
+        if (re) {
+            ironman_ |= (1 << FAKE_WRITER);
+        } else {
+            ironman_ &= ~(1 << FAKE_WRITER);
+        }
+    }
+ private:
+    enum {
+        WANT_TO_BE_WRITER = 1,
+        FAKE_WRITER = 2,
+        EXCLUSIVE = 3,
+    };
+    //* default exclusive = true
+    uint64_t ironman_ = 8;    
+};
+
+
+
 const char* ErrorNum2ErrorName(LIBCURVE_ERROR err);
 
 typedef struct FileStatInfo {
@@ -105,6 +159,13 @@ int Open4Qemu(const char* filename);
  * @return: 返回文件fd
  */
 int Open(const char* filename, const C_UserInfo_t* userinfo);
+
+/*
+ * 打开文件, 基本功能同上，但增加 openflags
+*/
+int Open2(const char* filename, 
+         const C_UserInfo_t* userinfo,
+         const OpenFlags openflags);
 
 /**
  * 创建文件
@@ -376,52 +437,6 @@ inline bool operator==(const UserInfo& lhs, const UserInfo& rhs) {
     return lhs.owner == rhs.owner && lhs.password == rhs.password;
 }
 
-struct OpenFlags {
-    // bool exclusive;
-    // // fakewriter, default false it is normal client
-    // bool fake;
-    // bool wantobewriter;
-    // OpenFlags() : exclusive(true), fake(false) {}
- public:
-    //* default don't but you can set it
-    bool IsWantToBeWriter() const {
-        return (ironman_ >> WANT_TO_BE_WRITER) & 1;
-    }
-    void SetWantToBeWriter(bool re) {
-        if (re) {
-            ironman_ |= (1 << WANT_TO_BE_WRITER);
-        } else {
-            ironman_ &= ~(1 << WANT_TO_BE_WRITER);
-        }
-    }
-    bool IsExeclusive() const {
-        return (ironman_ >> EXCLUSIVE) & 1;
-    }
-    void SetExeclusive(bool re) {
-        if (re) {
-            ironman_ |= (1 << EXCLUSIVE);
-        } else {
-            ironman_ &= ~(1 << EXCLUSIVE);
-        }    
-    }
-    bool IsFakeWriter() const {
-        return (ironman_ >> FAKE_WRITER) & 1;
-    }
-    void SetFakeWriter(bool re) {
-        if (re) {
-            ironman_ |= (1 << FAKE_WRITER);
-        } else {
-            ironman_ &= ~(1 << FAKE_WRITER);
-        }
-    }
- private:
-    enum {
-        WANT_TO_BE_WRITER = 1,
-        FAKE_WRITER = 2,
-        EXCLUSIVE = 3,
-    };
-    uint64_t ironman_ = 0;    
-};
 
 class CurveClient {
  public:

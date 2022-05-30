@@ -171,9 +171,6 @@ class CURVE_CACHELINE_ALIGNMENT FileInstance {
     bool CanWrite() {
         return this->finfo_.userinfo.permission == 1 || this->finfo_.userinfo.permission == 2;
     }
-    void SetFdPermission(uint64_t permission) {
-        this->finfo_.userinfo.permission = permission;
-    }
  private:
     void StopLease();
 

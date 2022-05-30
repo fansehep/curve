@@ -751,6 +751,16 @@ int Open(const char* filename, const C_UserInfo_t* userinfo) {
             UserInfo(userinfo->owner, userinfo->password));
 }
 
+int Open2(const char*filename,
+          const C_UserInfo_t* userinfo,
+          const OpenFlags openflags) {
+    if (globalclient == nullptr) {
+        LOG(ERROR) << "not inited!";
+        return -LIBCURVE_ERROR::FAILED;
+    }
+    return globalclient->Open(filename, UserInfo(userinfo->owner, userinfo->password), openflags);
+}
+
 int Read(int fd, char* buf, off_t offset, size_t length) {
     if (globalclient == nullptr) {
         LOG(ERROR) << "not inited!";
