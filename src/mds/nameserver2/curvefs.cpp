@@ -1603,6 +1603,7 @@ StatusCode CurveFS::OpenFile(const std::string &fileName,
                              uint64_t& permission,
                              uint64_t date,
                              bool tobewriter,
+                             bool isfakewriter,
                              CloneSourceSegment* cloneSourceSegment) {
     // check the existence of the file
     StatusCode ret;
@@ -1621,12 +1622,13 @@ StatusCode CurveFS::OpenFile(const std::string &fileName,
         return ret;
     }
     LOG(INFO) << "FileInfo, " << fileInfo->DebugString();
-    //* 通过文件锁获得权限
-    //* 如果他不想成为writer, 那就不LOCK,
-    //* 默认权限就是 Reader
-    if (tobewriter == true) {
+
+    if (isfakewriter == true) {
+        permission = 1;
+    } else if (tobewriter) {
         permission = static_cast<uint64_t>(writerlock_->Lock(fileName, clientIP, clientport, date));
     }
+
     if (fileInfo->filetype() != FileType::INODE_PAGEFILE) {
         LOG(ERROR) << "OpenFile file type not support, fileName = " << fileName
                    << ", clientIP = " << clientIP

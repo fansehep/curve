@@ -85,7 +85,19 @@ struct OpenFlags {
             ironman_ &= ~(1 << FAKE_WRITER);
         }
     }
- private:
+
+    bool IsReadonly() const {
+        if ((ironman_ & (1 << EXCLUSIVE)) == 0) {
+            return false;
+        }
+
+        if ((ironman_ & (1 << WANT_TO_BE_WRITER)) == 0) {
+            return true;
+        }
+
+        return false;
+    }
+
     enum {
         WANT_TO_BE_WRITER = 1,
         FAKE_WRITER = 2,

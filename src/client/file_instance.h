@@ -168,13 +168,15 @@ class CURVE_CACHELINE_ALIGNMENT FileInstance {
     /*
       writer 可写，polardb 的那个工具也可写
     */
-    bool CanWrite() {
-        return this->finfo_.userinfo.permission == 1 || this->finfo_.userinfo.permission == 2;
-    }
+    // bool CanWrite() {
+    //     return this->finfo_.userinfo.permission == 1 || this->finfo_.userinfo.permission == 2;
+    // }
  private:
     void StopLease();
 
  private:
+    friend class FileClient;
+
     // 保存当前file的文件信息
     FInfo_t                 finfo_;
 

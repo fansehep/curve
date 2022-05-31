@@ -224,6 +224,10 @@ int FileClient::Open(const std::string& filename,
         return ret;
     }
 
+    if (openflags.IsReadonly()) {
+        fileserv->readonly_ = true;
+    }
+
     int fd = fdcount_.fetch_add(1, std::memory_order_relaxed);
 
     {

@@ -1400,6 +1400,7 @@ void NameSpaceService::OpenFile(::google::protobuf::RpcController* controller,
                                 permission,
                                 request->date(),
                                 request->tobewriter(),
+                                request->isfakewriter(),
                                 cloneSourceSegment);
     if (retCode != StatusCode::kOK)  {
         response->set_statuscode(retCode);
@@ -1427,13 +1428,6 @@ void NameSpaceService::OpenFile(::google::protobuf::RpcController* controller,
         delete cloneSourceSegment;
         return;
     } else {
-        //* fakewriter => writer
-        if(request->isfakewriter() == true) {
-            //* 2 is FakeWriter
-            response->set_permission(2); 
-        } else {
-            response->set_permission(permission);
-        }
         response->set_allocated_protosession(protoSession);
         response->set_allocated_fileinfo(fileInfo);
         response->set_statuscode(StatusCode::kOK);

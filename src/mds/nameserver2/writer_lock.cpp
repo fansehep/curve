@@ -47,7 +47,7 @@ inline size_t Writer_Lock::Hash(const std::string& key) {
 std::string Writer_Lock::EncodeKey(const std::string& writerinfo) {
   std::string key = WRITER_LOCK_PREFIX;
   auto prefix_len = WRITER_LOCK_PREFIX_SIZE;
-  uint64_t num = Hash(writerinfo);
+  uint64_t num = static_cast<uint64_t>(Hash(writerinfo));
   key.resize(prefix_len + sizeof(uint64_t));
   EncodeBigEndian(&(key[prefix_len]), num);
   return key;
@@ -68,15 +68,16 @@ WRITER_STATUS Writer_Lock::GetWriter(const std::string& filename, \
       LOG(ERROR) << "parse fail";
       return WRITER_STATUS::ERROR;
     } //GetTimeofDayMs
-    uint64_t now = TimeUtility::GetTimeofDayMs();
-    //* 当现在时间 >= writer 上次的最后一次收到消息的时间 + session 间隔时间 +
-    //* 允许超时的最大时间 
-    if (now >= (writerinfo.lastreceivetime() + w_lockoptions_.WriterInterval \
-      + w_lockoptions_.WriterTimeout)) {
+    // now unit is sec
+    // 
+    uint64_t now = TimeUtility::GetTimeofDaySec();
+    //* 当现在时间 >= writer 上次的最后一次收到消息的时间 + session 间隔时间 + 允许超时的最大时间 
+    if ((now - writerinfo.lastreceivetime()) > (( w_lockoptions_.WriterInterval / 1000) \
+      + (w_lockoptions_.WriterTimeout / 1000))) {
         return WRITER_STATUS::EXPIRED;
     }
     std::string t_writer = writerinfo.clientip();
-    char buf[8];
+    char buf[64];
     snprintf(buf, sizeof(buf), " %u", writerinfo.clientport());
     t_writer += buf;
     *writer = t_writer;
@@ -97,6 +98,7 @@ bool Writer_Lock::SetWriter(const std::string& filename,
       LOG(ERROR) << "Serialize value to string failed!";
       return false;
     }
+    NameLockGuard lg(namelock_, filename);
     int rc = etcdclient_->Put(key, value);
     if (rc != EtcdErrCode::EtcdOK) {
       LOG(ERROR) << "put the key, value" << key << value << "error";
@@ -126,29 +128,35 @@ Permission Writer_Lock::Lock(const std::string& filename,
                              const std::string& clientip,
                              uint32_t clientport,
                              uint64_t date) {
-    char buf[8];
+    NameLockGuard lg(namelock_, filename);
+    char buf[64];
     snprintf(buf, sizeof(buf), " %u", clientport);
     std::string t_writer = (clientip + buf);
     std::string writer;
     auto status = GetWriter(filename, &writer);
     //* 0) 此时，对应的文件无writer挂载
     if (status == WRITER_STATUS::NOT_EXIST) {
+      LOG(INFO) << filename << " " << clientip << clientport << "has be writer";
       return Permission::Writer;
     }
     if (status == WRITER_STATUS::SUCCESS) {
       //* 1) 挂载成功了，但是 mds rpc 返回失败了，
       //*  客户端重试了，这里也可以成功挂载
       if (t_writer == writer) {
+        LOG(INFO) << filename << " " << clientip << clientport << "retry open";
         return Permission::Writer;
       } else {
         //* 不同则返回 reader 权限
+        LOG(INFO) << filename << " " << clientip << clientport << "is reader";
         return Permission::Reader;
       }
       //* 2) 当前的文件对应的writer超时了， 可以挂载
     } else if (status == WRITER_STATUS::EXPIRED) {
+      LOG(INFO) << filename << " " << clientip << clientport << "is new writer";
       SetWriter(filename, clientip, clientport, date);
       return Permission::Writer;
     } else if (status == WRITER_STATUS::ERROR) {
+      LOG(ERROR) << filename << " " << clientip << clientport << "fail get fileinfo";
       //* 3) 任何有错误都是 读权限
       return Permission::Reader;
     }
@@ -159,7 +167,7 @@ WRITER_STATUS Writer_Lock::Unlock(const std::string& filename,
                                 const std::string& clientip,
                                 uint32_t clientport) {
     NameLockGuard lg(namelock_, filename);
-    char buf[8];
+    char buf[64];
     snprintf(buf, sizeof(buf), " %u", clientport);
     std::string cur_writer = clientip + buf;
     std::string old_writer;
@@ -181,7 +189,8 @@ bool Writer_Lock::UpdateWriterLock(const std::string& filename,
                                    const std::string& ClientIp,
                                    uint32_t ClientPort,
                                    uint64_t Date) {
-    char buf[8];
+    NameLockGuard lg(namelock_, filename);
+    char buf[64];
     snprintf(buf, sizeof(buf), " %u", ClientPort);
     std::string cur_writer = ClientIp + buf;
     std::string old_writer;

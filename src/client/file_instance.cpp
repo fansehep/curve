@@ -117,9 +117,10 @@ int FileInstance::Write(const char* buf, off_t offset, size_t len) {
         DVLOG(9) << "open with read only, do not support write!";
         return -1;
     }
-    if(!CanWrite()) {
+    /*if(!CanWrite()) {
+        LOG(ERROR) << "Can't write";
         return -1;
-    }
+    }*/
     DLOG_EVERY_SECOND(INFO) << "begin write " << finfo_.fullPathName
                             << ", offset = " << offset
                             << ", len = " << len;
@@ -138,9 +139,9 @@ int FileInstance::AioWrite(CurveAioContext* aioctx, UserDataType dataType) {
         DVLOG(9) << "open with read only, do not support write!";
         return -1;
     }
-    if(!CanWrite()) {
+    /*if(!CanWrite()) {
         return -1;
-    }
+    }*/
     DLOG_EVERY_SECOND(INFO) << "begin AioWrite " << finfo_.fullPathName
                             << ", offset = " << aioctx->offset
                             << ", len = " << aioctx->length;

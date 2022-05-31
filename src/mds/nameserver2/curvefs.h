@@ -375,6 +375,7 @@ class CurveFS {
                         uint64_t& permission,
                         uint64_t data,
                         bool tobewriter,
+                        bool isfakewriter,
                         CloneSourceSegment* cloneSourceSegment = nullptr);
 
     /**

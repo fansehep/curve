@@ -309,20 +309,23 @@ TEST_F(UnstableCSModuleException, TestReadyWriterSomeReader) {
     const std::string filename = "/TestCommonReadAndWrite";
     constexpr size_t length = 4ull * 1024 * 1024;
     constexpr off_t offset = 4ull * 1024 * 1024;
-    std::unique_ptr<char[]> readBuff(new char[length]);
+    std::unique_ptr<char[]> data(new char[length]);
 
     C_UserInfo_t info;
 
     snprintf(info.owner, sizeof(info.owner), "curve");
     info.password[0] = 0;
 
-    ::Create(filename.c_str(), &info, 10ull * 1024 * 1024 * 1024);
+    auto ret = ::Create(filename.c_str(), &info, 10ull * 1024 * 1024 * 1024);
+    ASSERT_TRUE(ret == LIBCURVE_ERROR::OK || ret == -LIBCURVE_ERROR::EXISTS)
+        << ret;
     OpenFlags openflags;
     openflags.SetWantToBeWriter(true);
 	int fd = ::Open2(filename.c_str(), &info, openflags);
-    int ret = ::Read(fd, readBuff.get(), offset, length);
-    ret = ::Write(fd, readBuff.get(), offset, length);
-    ASSERT_GT(ret, 0);
+    ASSERT_GE(fd, 0) << fd;
+    ret = ::Read(fd, data.get(), offset, length);
+    ret = ::Write(fd, data.get(), offset, length);
+    ASSERT_GT(ret, 0) << ret;
 	//* 此时base process 所在的进程成为 Writer
 	//* fork 2 个进程，再去挂载
 	auto rf = fork();
@@ -331,16 +334,16 @@ TEST_F(UnstableCSModuleException, TestReadyWriterSomeReader) {
         exit(-1);
     }
     //* child process
-	if (rf == 0) {
-		int fd_c2 = ::Open(filename.c_str(), &info);
-		int wr_v = ::Write(fd_c2, readBuff.get(), offset, length);
+    if (rf == 0) {
+        int fd_c2 = ::Open(filename.c_str(), &info);
+        int wr_v = ::Write(fd_c2, data.get(), offset, length);
         ASSERT_EQ(-1, wr_v);
         
         auto rf_2 = fork();
         //* child process 2
         if(rf_2 == 0) {
             int fd_c3 = ::Open(filename.c_str(), &info);
-            int wr_v2 = ::Write(fd_c3, readBuff.get(), offset, length);
+            int wr_v2 = ::Write(fd_c3, data.get(), offset, length);
             ASSERT_EQ(-1, wr_v2);
         }
         if(rf_2 > 0) {
@@ -354,7 +357,7 @@ TEST_F(UnstableCSModuleException, TestReadyWriterSomeReader) {
         //* child process 3
         if (rf_3 == 0) {
             int fd_c4 = ::Open2(filename.c_str(), &info, openflags);
-            int wr_v4 = ::Write(fd_c4, readBuff.get(), offset, length);
+            int wr_v4 = ::Write(fd_c4, data.get(), offset, length);
             ASSERT_GT(wr_v4, 0);
             ::Close(fd_c4);
         }
