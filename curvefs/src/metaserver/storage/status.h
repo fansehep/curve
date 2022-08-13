@@ -31,7 +31,7 @@ namespace storage {
 
 class Status {
  public:
-    enum Code : unsigned char {
+    enum Code {
         kOk = 0,
         kDBClosed = 1,
         kNotFound = 2,

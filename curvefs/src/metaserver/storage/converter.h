@@ -37,7 +37,7 @@ class MetaStoreFStream;
 
 namespace storage {
 
-enum KEY_TYPE : unsigned char {
+enum KEY_TYPE {
     kTypeInode = 1,
     kTypeS3ChunkInfo = 2,
     kTypeDentry = 3,
