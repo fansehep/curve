@@ -56,6 +56,7 @@ func (cCmd *CopysetCommand) AddFlags() {
 	config.AddRpcRetryTimesFlag(cCmd.Cmd)
 	config.AddRpcTimeoutFlag(cCmd.Cmd)
 	config.AddFsMdsAddrFlag(cCmd.Cmd)
+	config.AddMarginOptionFlag(cCmd.Cmd)
 }
 
 func (cCmd *CopysetCommand) Init(cmd *cobra.Command, args []string) error {
@@ -118,7 +119,7 @@ func GetCopysetStatus(caller *cobra.Command) (*interface{}, *tablewriter.Table, 
 	copysetCmd.Cmd.SetArgs([]string{
 		fmt.Sprintf("--%s", config.FORMAT), config.FORMAT_NOOUT,
 	})
-	cobrautil.AlignFlagsValue(caller, copysetCmd.Cmd, []string{
+	config.AlignFlagsValue(caller, copysetCmd.Cmd, []string{
 		config.RPCRETRYTIMES, config.RPCTIMEOUT, config.CURVEFS_MDSADDR,
 	})
 	copysetCmd.Cmd.SilenceErrors = true

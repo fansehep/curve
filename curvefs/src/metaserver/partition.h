@@ -34,7 +34,6 @@
 #include "curvefs/src/metaserver/dentry_storage.h"
 #include "curvefs/src/metaserver/inode_manager.h"
 #include "curvefs/src/metaserver/inode_storage.h"
-#include "curvefs/src/metaserver/s3compact.h"
 #include "curvefs/src/metaserver/trash_manager.h"
 #include "curvefs/src/metaserver/storage/iterator.h"
 
@@ -45,15 +44,14 @@ using curvefs::common::PartitionStatus;
 using ::curvefs::metaserver::storage::KVStorage;
 using ::curvefs::metaserver::storage::Iterator;
 using S3ChunkInfoMap = google::protobuf::Map<uint64_t, S3ChunkInfoList>;
-using ::curvefs::metaserver::FsFileType;
 
 constexpr uint64_t kMinPartitionStartId = ROOTINODEID + 1;
 
 class Partition {
  public:
-    Partition(PartitionInfo partition, std::shared_ptr<KVStorage> kvStorage);
-
-    ~Partition() {}
+    Partition(PartitionInfo partition,
+              std::shared_ptr<KVStorage> kvStorage,
+              bool startCompact = true);
 
     // dentry
     MetaStatusCode CreateDentry(const Dentry& dentry);
@@ -157,7 +155,9 @@ class Partition {
 
     PartitionStatus GetStatus() { return partitionInfo_.status(); }
 
-    void ClearS3Compact() { s3compact_ = nullptr; }
+    void StartS3Compact();
+
+    void CancelS3Compact();
 
     std::string GetInodeTablename();
 
@@ -173,17 +173,6 @@ class Partition {
 
     bool Clear();
 
-    MetaStatusCode UpdatePartitionInfoFsType2InodeNum(MetaStatusCode ret,
-                                                      const FsFileType& type,
-                                                      int32_t count) {
-        if (MetaStatusCode::OK == ret) {
-            partitionInfo_.set_inodenum(partitionInfo_.inodenum() + count);
-            (*partitionInfo_.mutable_filetype2inodenum())[type] += count;
-        }
-
-        return ret;
-    }
-
  private:
     std::shared_ptr<InodeStorage> inodeStorage_;
     std::shared_ptr<DentryStorage> dentryStorage_;
@@ -193,7 +182,6 @@ class Partition {
     std::shared_ptr<TxManager> txManager_;
 
     PartitionInfo partitionInfo_;
-    std::shared_ptr<S3Compact> s3compact_;
 };
 }  // namespace metaserver
 }  // namespace curvefs

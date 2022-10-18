@@ -113,7 +113,6 @@ void InitExcutorOption(Configuration *conf, ExcutorOpt *opts, bool internal) {
 void InitBlockDeviceOption(Configuration *conf,
                            BlockDeviceClientOptions *bdevOpt) {
     conf->GetValueFatalIfFail("bdev.confpath", &bdevOpt->configPath);
-    conf->GetValueFatalIfFail("bdev.threadnum", &bdevOpt->threadnum);
 }
 
 void InitDiskCacheOption(Configuration *conf,
@@ -225,6 +224,14 @@ void InitLeaseOpt(Configuration *conf, LeaseOpt *leaseOpt) {
                               &leaseOpt->refreshTimesPerLease);
 }
 
+void InitRefreshDataOpt(Configuration *conf,
+                        RefreshDataOption *opt) {
+    conf->GetValueFatalIfFail("fuseClient.maxDataSize",
+                              &opt->maxDataSize);
+    conf->GetValueFatalIfFail("fuseClient.refreshDataIntervalSec",
+                              &opt->refreshDataIntervalSec);
+}
+
 void SetBrpcOpt(Configuration *conf) {
     curve::common::GflagsLoadValueFromConfIfCmdNotSet dummy;
     dummy.Load(conf, "defer_close_second", "rpc.defer.close.second",
@@ -243,6 +250,7 @@ void InitFuseClientOption(Configuration *conf, FuseClientOption *clientOption) {
     InitExtentManagerOption(conf, &clientOption->extentManagerOpt);
     InitVolumeOption(conf, &clientOption->volumeOpt);
     InitLeaseOpt(conf, &clientOption->leaseOpt);
+    InitRefreshDataOpt(conf, &clientOption->refreshDataOption);
 
     conf->GetValueFatalIfFail("fuseClient.attrTimeOut",
                               &clientOption->attrTimeOut);
@@ -264,18 +272,24 @@ void InitFuseClientOption(Configuration *conf, FuseClientOption *clientOption) {
                               &clientOption->enableICacheMetrics);
     conf->GetValueFatalIfFail("fuseClient.enableDCacheMetrics",
                               &clientOption->enableDCacheMetrics);
-    conf->GetValueFatalIfFail("fuseClient.cto", &FLAGS_enableCto);
     conf->GetValueFatalIfFail("client.dummyserver.startport",
                               &clientOption->dummyServerStartPort);
     conf->GetValueFatalIfFail("fuseClient.enableMultiMountPointRename",
                               &clientOption->enableMultiMountPointRename);
     conf->GetValueFatalIfFail("fuseClient.disableXattr",
                               &clientOption->disableXattr);
+    conf->GetValueFatalIfFail("fuseClient.cto", &FLAGS_enableCto);
 
     LOG_IF(WARNING, conf->GetBoolValue("fuseClient.enableSplice",
                                        &clientOption->enableFuseSplice))
         << "Not found `fuseClient.enableSplice` in conf, use default value `"
         << std::boolalpha << clientOption->enableFuseSplice << '`';
+
+    // if enableCto, attr and entry cache must invalid
+    if (FLAGS_enableCto) {
+        clientOption->attrTimeOut = 0;
+        clientOption->entryTimeOut = 0;
+    }
 
     SetBrpcOpt(conf);
 }

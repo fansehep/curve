@@ -20,10 +20,15 @@
  * Author: xuchaojie
  */
 
+#include <gmock/gmock-spec-builders.h>
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <chrono>
 #include <cstdint>
+#include <thread>
 
+#include "curvefs/src/client/inode_wrapper.h"
+#include "curvefs/src/client/rpcclient/metaserver_client.h"
 #include "curvefs/test/client/mock_metaserver_client.h"
 #include "curvefs/src/client/inode_cache_manager.h"
 #include "curvefs/src/common/define.h"
@@ -50,6 +55,7 @@ using ::testing::AnyOf;
 
 using rpcclient::MetaServerClientDone;
 using rpcclient::MockMetaServerClient;
+using rpcclient::DataIndices;
 
 class TestInodeCacheManager : public ::testing::Test {
  protected:
@@ -61,7 +67,10 @@ class TestInodeCacheManager : public ::testing::Test {
         metaClient_ = std::make_shared<MockMetaServerClient>();
         iCacheManager_ = std::make_shared<InodeCacheManagerImpl>(metaClient_);
         iCacheManager_->SetFsId(fsId_);
-        iCacheManager_->Init(3, true, 1);
+        RefreshDataOption option;
+        option.maxDataSize = 1;
+        option.refreshDataIntervalSec = 0;
+        iCacheManager_->Init(3, true, 1, option);
     }
 
     virtual void TearDown() {
@@ -83,19 +92,53 @@ TEST_F(TestInodeCacheManager, GetInode) {
     inode.set_inodeid(inodeId);
     inode.set_fsid(fsId_);
     inode.set_length(fileLength);
+    inode.set_type(FsFileType::TYPE_S3);
+    auto s3ChunkInfoMap = inode.mutable_s3chunkinfomap();
+    S3ChunkInfoList *s3ChunkInfoList = new S3ChunkInfoList();
+    S3ChunkInfo *s3ChunkInfo = s3ChunkInfoList->add_s3chunks();
+    s3ChunkInfo->set_chunkid(1);
+    s3ChunkInfo->set_compaction(1);
+    s3ChunkInfo->set_offset(0);
+    s3ChunkInfo->set_len(1024);
+    s3ChunkInfo->set_size(65536);
+    s3ChunkInfo->set_zero(true);
+    s3ChunkInfoMap->insert({1, *s3ChunkInfoList});
 
+    // miss cache and get inode failed
     EXPECT_CALL(*metaClient_, GetInode(fsId_, inodeId, _, _))
-        .WillOnce(Return(MetaStatusCode::NOT_FOUND))
-        .WillOnce(DoAll(SetArgPointee<2>(inode), Return(MetaStatusCode::OK)));
-
+        .WillOnce(Return(MetaStatusCode::NOT_FOUND));
     std::shared_ptr<InodeWrapper> inodeWrapper;
     CURVEFS_ERROR ret = iCacheManager_->GetInode(inodeId, inodeWrapper);
     ASSERT_EQ(CURVEFS_ERROR::NOTEXIST, ret);
 
+    // miss cache and get inode ok, do not need streaming
+    EXPECT_CALL(*metaClient_, GetInode(fsId_, inodeId, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(inode), SetArgPointee<3>(false),
+                        Return(MetaStatusCode::OK)));
     ret = iCacheManager_->GetInode(inodeId, inodeWrapper);
     ASSERT_EQ(CURVEFS_ERROR::OK, ret);
 
-    Inode out = inodeWrapper->GetInodeUnlocked();
+    // miss cache and get inode ok, need streaming
+    uint64_t inodeId2 = 200;
+    Inode inode2 = inode;
+    inode2.set_inodeid(inodeId2);
+    EXPECT_CALL(*metaClient_, GetInode(fsId_, inodeId2, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(inode2), SetArgPointee<3>(true),
+                        Return(MetaStatusCode::OK)));
+    EXPECT_CALL(*metaClient_,
+                GetOrModifyS3ChunkInfo(fsId_, inodeId2, _, true, _, _))
+        .WillOnce(Return(MetaStatusCode::OK));
+    ASSERT_EQ(CURVEFS_ERROR::OK,
+              iCacheManager_->GetInode(inodeId2, inodeWrapper));
+
+    // hit cache and need refresh s3info
+    EXPECT_CALL(*metaClient_,
+        GetOrModifyS3ChunkInfo(fsId_, inodeId, _, true, _, _))
+        .WillOnce(Return(MetaStatusCode::OK));
+    ret = iCacheManager_->GetInode(inodeId, inodeWrapper);
+    ASSERT_EQ(CURVEFS_ERROR::OK, ret);
+
+    Inode out = inodeWrapper->GetInode();
     ASSERT_EQ(inodeId, out.inodeid());
     ASSERT_EQ(fsId_, out.fsid());
     ASSERT_EQ(fileLength, out.length());
@@ -103,26 +146,92 @@ TEST_F(TestInodeCacheManager, GetInode) {
     ret = iCacheManager_->GetInode(inodeId, inodeWrapper);
     ASSERT_EQ(CURVEFS_ERROR::OK, ret);
 
-    out = inodeWrapper->GetInodeUnlocked();
+    out = inodeWrapper->GetInode();
     ASSERT_EQ(inodeId, out.inodeid());
     ASSERT_EQ(fsId_, out.fsid());
     ASSERT_EQ(fileLength, out.length());
+}
 
-    curvefs::client::common::FLAGS_enableCto = true;
-    inodeWrapper->SetOpenCount(0);
+TEST_F(TestInodeCacheManager, RefreshInode) {
+    uint64_t inodeId = 100;
+    uint64_t fileLength = 100;
+
+    Inode inode;
+    inode.set_inodeid(inodeId);
+    inode.set_fsid(fsId_);
+    inode.set_length(fileLength);
+    inode.set_type(FsFileType::TYPE_S3);
+    auto s3ChunkInfoMap = inode.mutable_s3chunkinfomap();
+    S3ChunkInfoList *s3ChunkInfoList = new S3ChunkInfoList();
+    S3ChunkInfo *s3ChunkInfo = s3ChunkInfoList->add_s3chunks();
+    s3ChunkInfo->set_chunkid(1);
+    s3ChunkInfo->set_compaction(1);
+    s3ChunkInfo->set_offset(0);
+    s3ChunkInfo->set_len(1024);
+    s3ChunkInfo->set_size(65536);
+    s3ChunkInfo->set_zero(true);
+    s3ChunkInfoMap->insert({1, *s3ChunkInfoList});
+
+    // cache miss, get s3-inode from metaserver failed
     EXPECT_CALL(*metaClient_, GetInode(fsId_, inodeId, _, _))
         .WillOnce(Return(MetaStatusCode::NOT_FOUND));
-    ret = iCacheManager_->GetInode(inodeId, inodeWrapper);
-    ASSERT_EQ(CURVEFS_ERROR::NOTEXIST, ret);
-    ASSERT_EQ(inodeId, out.inodeid());
-    ASSERT_EQ(fsId_, out.fsid());
-    ASSERT_EQ(fileLength, out.length());
+    ASSERT_EQ(CURVEFS_ERROR::NOTEXIST, iCacheManager_->RefreshInode(inodeId));
 
-    inodeWrapper->SetOpenCount(1);
+    // cache miss, get s3-inode from metaserver ok, do not need streaming
     EXPECT_CALL(*metaClient_, GetInode(fsId_, inodeId, _, _))
-        .WillOnce(Return(MetaStatusCode::NOT_FOUND));
-    ret = iCacheManager_->GetInode(inodeId, inodeWrapper);
-    ASSERT_EQ(CURVEFS_ERROR::NOTEXIST, ret);
+        .WillOnce(DoAll(SetArgPointee<2>(inode), SetArgPointee<3>(false),
+                        Return(MetaStatusCode::OK)));
+    ASSERT_EQ(CURVEFS_ERROR::OK, iCacheManager_->RefreshInode(inodeId));
+
+    // cache miss, get s3-inode from metaserver, need streaming
+    uint64_t inodeId2 = 200;
+    Inode inode2 = inode;
+    inode2.set_inodeid(inodeId2);
+    EXPECT_CALL(*metaClient_, GetInode(fsId_, inodeId2, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(inode2), SetArgPointee<3>(true),
+                        Return(MetaStatusCode::OK)));
+    EXPECT_CALL(*metaClient_,
+                GetOrModifyS3ChunkInfo(fsId_, inodeId2, _, true, _, _))
+        .WillOnce(Return(MetaStatusCode::OK));
+    ASSERT_EQ(CURVEFS_ERROR::OK, iCacheManager_->RefreshInode(inodeId2));
+
+    // cache hit, refresh s3-inode from metaserver, do not need streaming
+    Inode inodenew = inode;
+    inodenew.set_length(fileLength * 3);
+    EXPECT_CALL(*metaClient_, GetInode(fsId_, inodeId, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(inodenew), SetArgPointee<3>(false),
+                        Return(MetaStatusCode::OK)));
+    EXPECT_CALL(*metaClient_,
+                GetOrModifyS3ChunkInfo(fsId_, inodeId, _, true, _, _))
+        .WillOnce(Return(MetaStatusCode::OK));
+    ASSERT_EQ(CURVEFS_ERROR::OK, iCacheManager_->RefreshInode(inodeId));
+    std::shared_ptr<InodeWrapper> inodeWrapper;
+    ASSERT_EQ(CURVEFS_ERROR::OK,
+              iCacheManager_->GetInode(inodeId, inodeWrapper));
+    ASSERT_EQ(inodenew.length(), inodeWrapper->GetLength());
+
+    // cache hit, refresh s3-inode from metaserver, need streaming
+    EXPECT_CALL(*metaClient_, GetInode(fsId_, inodeId, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(inodenew), SetArgPointee<3>(true),
+                        Return(MetaStatusCode::OK)));
+    EXPECT_CALL(*metaClient_,
+                GetOrModifyS3ChunkInfo(fsId_, inodeId, _, true, _, _))
+        .WillOnce(Return(MetaStatusCode::OK));
+    ASSERT_EQ(CURVEFS_ERROR::OK, iCacheManager_->RefreshInode(inodeId));
+
+    // cache miss, get file-inode from metaserver
+    Inode inodefile;
+    uint64_t inodefileid = 300;
+    inodefile.set_inodeid(inodefileid);
+    inodefile.set_fsid(fsId_);
+    inodefile.set_type(FsFileType::TYPE_FILE);
+    inodefile.set_length(1);
+    EXPECT_CALL(*metaClient_, GetInode(fsId_, inodefileid, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(inodefile), SetArgPointee<3>(false),
+                        Return(MetaStatusCode::OK)));
+    EXPECT_CALL(*metaClient_, GetVolumeExtent(fsId_, inodefileid, _, _))
+        .WillOnce(Return(MetaStatusCode::OK));
+    ASSERT_EQ(CURVEFS_ERROR::OK, iCacheManager_->RefreshInode(inodefileid));
 }
 
 TEST_F(TestInodeCacheManager, GetInodeAttr) {
@@ -196,7 +305,7 @@ TEST_F(TestInodeCacheManager, CreateAndGetInode) {
     ASSERT_EQ(CURVEFS_ERROR::UNKNOWN, ret);
 
     ret = iCacheManager_->CreateInode(param, inodeWrapper);
-    Inode out = inodeWrapper->GetInodeUnlocked();
+    Inode out = inodeWrapper->GetInode();
     ASSERT_EQ(CURVEFS_ERROR::OK, ret);
     ASSERT_EQ(inodeId, out.inodeid());
     ASSERT_EQ(fsId_, out.fsid());
@@ -205,7 +314,7 @@ TEST_F(TestInodeCacheManager, CreateAndGetInode) {
     ret = iCacheManager_->GetInode(inodeId, inodeWrapper);
     ASSERT_EQ(CURVEFS_ERROR::OK, ret);
 
-    out = inodeWrapper->GetInodeUnlocked();
+    out = inodeWrapper->GetInode();
     ASSERT_EQ(inodeId, out.inodeid());
     ASSERT_EQ(fsId_, out.fsid());
     ASSERT_EQ(FsFileType::TYPE_FILE, out.type());
@@ -245,13 +354,15 @@ TEST_F(TestInodeCacheManager, ShipToFlushAndFlushAll) {
 
     iCacheManager_->ShipToFlush(inodeWrapper);
 
-    EXPECT_CALL(*metaClient_, UpdateInodeWithOutNlinkAsync(_, _, _, _))
-        .WillOnce(Invoke([](const Inode &inode, MetaServerClientDone *done,
-                            InodeOpenStatusChange statusChange,
-                            S3ChunkInofMap *s3ChunkInfoAdd) {
-            done->SetMetaStatusCode(MetaStatusCode::OK);
-            done->Run();
-        }));
+    EXPECT_CALL(*metaClient_,
+                UpdateInodeWithOutNlinkAsync_rvr(_, _, _, _, _))
+        .WillOnce(Invoke(
+            [](uint32_t /*fsId*/, uint64_t /*inodeId*/,
+               const InodeAttr& /*attr*/, MetaServerClientDone* done,
+               DataIndices /*indices*/) {
+                done->SetMetaStatusCode(MetaStatusCode::OK);
+                done->Run();
+            }));
 
     iCacheManager_->FlushAll();
 }
@@ -291,6 +402,58 @@ TEST_F(TestInodeCacheManager, BatchGetInodeAttr) {
     ASSERT_THAT(getAttrs.begin()->inodeid(), AnyOf(inodeId1, inodeId2));
     ASSERT_EQ(getAttrs.begin()->fsid(), fsId_);
     ASSERT_EQ(getAttrs.begin()->length(), fileLength);
+}
+
+TEST_F(TestInodeCacheManager, BatchGetInodeAttrAsync) {
+    uint64_t parentId = 1;
+    uint64_t inodeId1 = 100;
+    uint64_t inodeId2 = 200;
+
+    // in
+    std::set<uint64_t> inodeIds;
+    inodeIds.emplace(inodeId1);
+    inodeIds.emplace(inodeId2);
+
+    // out
+    Inode inode;
+    inode.set_inodeid(inodeId1);
+
+    std::vector<std::vector<uint64_t>> inodeGroups;
+    inodeGroups.emplace_back(std::vector<uint64_t>{inodeId2});
+
+    std::map<uint64_t, InodeAttr> attrs;
+
+    RepeatedPtrField<InodeAttr> inodeAttrs;
+    inodeAttrs.Add()->set_inodeid(inodeId2);
+
+    // fill icache
+    EXPECT_CALL(*metaClient_, GetInode(_, inodeId1, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(inode),
+                Return(MetaStatusCode::OK)));
+    std::shared_ptr<InodeWrapper> wrapper;
+    iCacheManager_->GetInode(inodeId1, wrapper);
+
+    EXPECT_CALL(*metaClient_, SplitRequestInodes(_, _, _))
+        .WillOnce(DoAll(SetArgPointee<2>(inodeGroups),
+                Return(true)));
+    EXPECT_CALL(*metaClient_, BatchGetInodeAttrAsync(_, _, _))
+        .WillOnce(Invoke([inodeAttrs](uint32_t fsId,
+            const std::vector<uint64_t> &inodeIds,
+            MetaServerClientDone *done) {
+                done->SetMetaStatusCode(MetaStatusCode::OK);
+                static_cast<BatchGetInodeAttrDone *>(done)
+                    ->SetInodeAttrs(inodeAttrs);
+                done->Run();
+                return MetaStatusCode::OK;
+            }));
+
+    CURVEFS_ERROR ret = iCacheManager_->BatchGetInodeAttrAsync(parentId,
+        &inodeIds, &attrs);
+
+    ASSERT_EQ(CURVEFS_ERROR::OK, ret);
+    ASSERT_EQ(attrs.size(), 2);
+    ASSERT_TRUE(attrs.find(inodeId1) != attrs.end());
+    ASSERT_TRUE(attrs.find(inodeId2) != attrs.end());
 }
 
 TEST_F(TestInodeCacheManager, BatchGetXAttr) {
@@ -358,13 +521,20 @@ TEST_F(TestInodeCacheManager, TestFlushInodeBackground) {
         inodeMap.emplace(inodeId + i, inodeWrapper);
     }
 
-    EXPECT_CALL(*metaClient_, UpdateInodeWithOutNlinkAsync(_, _, _, _))
+    EXPECT_CALL(*metaClient_,
+                UpdateInodeWithOutNlinkAsync_rvr(_, _, _, _, _))
         .WillRepeatedly(
-            Invoke([](const Inode &inode, MetaServerClientDone *done,
-                      InodeOpenStatusChange statusChange,
-                      S3ChunkInofMap *s3ChunkInfoAdd) {
-                done->SetMetaStatusCode(MetaStatusCode::OK);
-                done->Run();
+            Invoke([](uint32_t /*fsId*/, uint64_t /*inodeId*/,
+                      const InodeAttr& /*attr*/, MetaServerClientDone* done,
+                      DataIndices /*dataIndices*/) {
+                // run closure in a separate thread
+                std::thread th{[done]() {
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                    done->SetMetaStatusCode(MetaStatusCode::OK);
+                    done->Run();
+                }};
+
+                th.detach();
             }));
 
     EXPECT_CALL(*metaClient_, GetOrModifyS3ChunkInfoAsync(_, _, _, _))

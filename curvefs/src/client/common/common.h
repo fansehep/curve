@@ -27,6 +27,7 @@
 
 #include <bthread/mutex.h>
 #include <ostream>
+#include <string>
 
 namespace curvefs {
 namespace client {
@@ -63,6 +64,33 @@ enum class MetaServerOpType {
 std::ostream &operator<<(std::ostream &os, MetaServerOpType optype);
 
 const uint32_t MAXXATTRLENGTH = 256;
+
+const char kCurveFsWarmupXAttr[] = "curvefs.warmup.op";
+
+enum class WarmupOpType {
+    kWarmupOpUnknown = 0,
+    kWarmupOpAdd = 1,
+};
+
+WarmupOpType GetWarmupOpType(const std::string& op);
+
+enum class WarmupType {
+    kWarmupTypeUnknown = 0,
+    kWarmupTypeList = 1,
+    kWarmupTypeSingle = 2,
+};
+
+WarmupType GetWarmupType(const std::string& type);
+
+enum class FileHandle : uint64_t {
+    kDefaultValue = 0,
+    kKeepCache = 1,
+};
+
+enum class NlinkChange : int32_t {
+    kAddOne = 1,
+    kSubOne = -1,
+};
 
 }  // namespace common
 }  // namespace client

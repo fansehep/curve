@@ -38,7 +38,7 @@ import (
 
 type MetaserverCommand struct {
 	basecmd.FinalCurveCmd
-	metrics []basecmd.Metric
+	metrics []*basecmd.Metric
 	rows    []map[string]string
 	health  cobrautil.ClUSTER_HEALTH_STATUS
 }
@@ -74,7 +74,7 @@ func (mCmd *MetaserverCommand) AddFlags() {
 
 func (mCmd *MetaserverCommand) Init(cmd *cobra.Command, args []string) error {
 	mCmd.health = cobrautil.HEALTH_ERROR
-	externalAddrs, internalAddrs, errMetaserver := topology.GetMetaserverAddrs()
+	externalAddrs, internalAddrs, errMetaserver := topology.GetMetaserverAddrs(mCmd.Cmd)
 	if errMetaserver.TypeCode() != cmderror.CODE_SUCCESS {
 		mCmd.Error = errMetaserver
 		return fmt.Errorf(errMetaserver.Message)
@@ -95,9 +95,9 @@ func (mCmd *MetaserverCommand) Init(cmd *cobra.Command, args []string) error {
 		timeout := viper.GetDuration(config.VIPER_GLOBALE_HTTPTIMEOUT)
 		addrs := []string{addr}
 		statusMetric := basecmd.NewMetric(addrs, STATUS_SUBURI, timeout)
-		mCmd.metrics = append(mCmd.metrics, *statusMetric)
+		mCmd.metrics = append(mCmd.metrics, statusMetric)
 		versionMetric := basecmd.NewMetric(addrs, VERSION_SUBURI, timeout)
-		mCmd.metrics = append(mCmd.metrics, *versionMetric)
+		mCmd.metrics = append(mCmd.metrics, versionMetric)
 
 		// set rows
 		row := make(map[string]string)
@@ -119,7 +119,7 @@ func (mCmd *MetaserverCommand) RunCommand(cmd *cobra.Command, args []string) err
 	size := 0
 	for _, metric := range mCmd.metrics {
 		size++
-		go func(m basecmd.Metric) {
+		go func(m *basecmd.Metric) {
 			result, err := basecmd.QueryMetric(m)
 			var key string
 			if m.SubUri == STATUS_SUBURI {
@@ -197,7 +197,7 @@ func GetMetaserverStatus(caller *cobra.Command) (*interface{}, *tablewriter.Tabl
 	metaserverCmd.Cmd.SetArgs([]string{
 		fmt.Sprintf("--%s", config.FORMAT), config.FORMAT_NOOUT,
 	})
-	cobrautil.AlignFlagsValue(caller, metaserverCmd.Cmd, []string{
+	config.AlignFlagsValue(caller, metaserverCmd.Cmd, []string{
 		config.RPCRETRYTIMES, config.RPCTIMEOUT, config.CURVEFS_MDSADDR,
 	})
 	metaserverCmd.Cmd.SilenceErrors = true

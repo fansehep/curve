@@ -45,7 +45,6 @@ using MdsOption = ::curve::client::MetaServerOption;
 
 struct BlockDeviceClientOptions {
     std::string configPath;
-    uint32_t threadnum;
 };
 
 struct MetaCacheOpt {
@@ -167,6 +166,10 @@ struct ExtentManagerOption {
     uint64_t preAllocSize;
 };
 
+struct RefreshDataOption {
+    uint64_t maxDataSize = 1024;
+    uint32_t refreshDataIntervalSec = 30;
+};
 struct FuseClientOption {
     MdsOption mdsOpt;
     MetaCacheOpt metaCacheOpt;
@@ -178,6 +181,7 @@ struct FuseClientOption {
     ExtentManagerOption extentManagerOpt;
     VolumeOption volumeOpt;
     LeaseOpt leaseOpt;
+    RefreshDataOption refreshDataOption;
 
     double attrTimeOut;
     double entryTimeOut;

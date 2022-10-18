@@ -157,7 +157,7 @@ build_target() {
     # set version
     g_build_opts+=("--copt -DCURVEVERSION=${curve_version}")
 
-    if [ "$g_os" == "debian10" -o "$g_os" == "debian11" ]; then
+    if [ `gcc -dumpversion | awk -F'.' '{print $1}'` -gt 6 ]; then
         g_build_opts+=("--config=gcc7-later")
     fi
 
@@ -191,6 +191,10 @@ build_requirements() {
     fi
     g_rocksdb_root="$(dirname ${PWD})/thirdparties/rocksdb"
     (cd ${g_rocksdb_root} && make build from_source=${g_build_rocksdb} && make install prefix=${g_rocksdb_root})
+    g_aws_sdk_root="$(dirname ${PWD})/thirdparties/aws"
+    (cd ${g_aws_sdk_root} && make)
+    g_etcdclient_root="$(dirname ${PWD})/thirdparties/etcdclient"
+    (cd ${g_etcdclient_root} && make clean && make all)
 }
 
 main() {

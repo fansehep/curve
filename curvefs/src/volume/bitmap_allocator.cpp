@@ -28,7 +28,6 @@
 #include <vector>
 
 #include "curvefs/src/volume/common.h"
-#include "curvefs/src/volume/utils.h"
 #include "src/common/fast_align.h"
 
 namespace curvefs {
@@ -86,7 +85,7 @@ BitmapAllocator::BitmapAllocator(const BitmapAllocatorOption& opt)
         << ", opt.length: " << opt.length;
 
     VLOG(9) << "offset: " << opt_.startOffset << ", len: " << opt_.length
-            << ", size_per_bit: " << opt_.sizePerBit << "bitmapAreaLength_ "
+            << ", size_per_bit: " << opt_.sizePerBit << ", bitmapAreaLength_ "
             << bitmapAreaLength_ << ", bitmapAreaOffset_: " << bitmapAreaOffset_
             << ", smallAreaLength_: " << smallAreaLength_
             << ", available: " << available_;

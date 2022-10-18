@@ -42,8 +42,8 @@ import (
 const (
 	fsExample = `$ curve fs create fs --fsname test1
 $ curve fs create fs --fsname test1 --fstype s3 --s3.ak AK --s3.sk SK --s3.endpoint http://localhost:9000 --s3.bucketname test1 --s3.blocksize 4MiB --s3.chunksize 4MiB
-$ curve fs create fs --fsname test1 --fstype volume --volume.bitmaplocation AtStart --volume.blockgroupsize 128MiB --volume.blocksize 4kib --volume.name volume --volume.password password --volume.size 1MiB --volume.slicesize 1MiB --volume.user user
-$ curve fs create fs --fsname test1 --fstype hybrid  --s3.ak AK --s3.sk SK --s3.endpoint http://localhost:9000 --s3.bucketname test1 --s3.blocksize 4MiB --s3.chunksize 4MiB  --volume.bitmaplocation AtStart --volume.blockgroupsize 128MiB --volume.blocksize 4kib --volume.name volume --volume.password password --volume.size 1MiB --volume.slicesize 1MiB --volume.user user`
+$ curve fs create fs --fsname test1 --fstype volume --volume.bitmaplocation AtStart --volume.blockgroupsize 128MiB --volume.blocksize 4KiB --volume.name volume --volume.password password --volume.size 1MiB --volume.slicesize 1MiB --volume.user user
+$ curve fs create fs --fsname test1 --fstype hybrid  --s3.ak AK --s3.sk SK --s3.endpoint http://localhost:9000 --s3.bucketname test1 --s3.blocksize 4MiB --s3.chunksize 4MiB  --volume.bitmaplocation AtStart --volume.blockgroupsize 128MiB --volume.blocksize 4KiB --volume.name volume --volume.password password --volume.size 1MiB --volume.slicesize 1MiB --volume.user user`
 )
 
 type CreateFsRpc struct {
@@ -119,6 +119,9 @@ func (fCmd *FsCommand) Init(cmd *cobra.Command, args []string) error {
 	fCmd.SetHeader(header)
 
 	fsName := config.GetFlagString(cmd, config.CURVEFS_FSNAME)
+	if !cobrautil.IsValidFsname(fsName) {
+		return fmt.Errorf("fsname[%s] is not vaild, it should be match regex: %s", fsName, cobrautil.FS_NAME_REGEX)
+	}
 
 	blocksizeStr := config.GetFlagString(cmd, config.CURVEFS_BLOCKSIZE)
 	blocksize, err := humanize.ParseBytes(blocksizeStr)
@@ -195,14 +198,14 @@ func setS3Info(detail *mds.FsDetail, cmd *cobra.Command) *cmderror.CmdError {
 	blocksizeStr := config.GetFlagString(cmd, config.CURVEFS_S3_BLOCKSIZE)
 	blocksize, err := humanize.ParseBytes(blocksizeStr)
 	if err != nil {
-		errParse := cmderror.ErrParseBytes()
+		errParse := cmderror.ErrParse()
 		errParse.Format(config.CURVEFS_S3_BLOCKSIZE, blocksizeStr)
 		return errParse
 	}
 	chunksizeStr := config.GetFlagString(cmd, config.CURVEFS_S3_CHUNKSIZE)
 	chunksize, err := humanize.ParseBytes(chunksizeStr)
 	if err != nil {
-		errParse := cmderror.ErrParseBytes()
+		errParse := cmderror.ErrParse()
 		errParse.Format(config.CURVEFS_S3_CHUNKSIZE, chunksizeStr)
 		return errParse
 	}
@@ -223,13 +226,13 @@ func setVolumeInfo(detail *mds.FsDetail, cmd *cobra.Command) *cmderror.CmdError 
 	sizeStr := config.GetFlagString(cmd, config.CURVEFS_VOLUME_SIZE)
 	size, err := humanize.ParseBytes(sizeStr)
 	if err != nil {
-		errParse := cmderror.ErrParseBytes()
+		errParse := cmderror.ErrParse()
 		errParse.Format(config.CURVEFS_VOLUME_SIZE, sizeStr)
 	}
 	blocksizeStr := config.GetFlagString(cmd, config.CURVEFS_VOLUME_BLOCKSIZE)
 	blocksize, err := humanize.ParseBytes(blocksizeStr)
 	if err != nil {
-		errParse := cmderror.ErrParseBytes()
+		errParse := cmderror.ErrParse()
 		errParse.Format(config.CURVEFS_VOLUME_BLOCKSIZE, blocksizeStr)
 	}
 	name := config.GetFlagString(cmd, config.CURVEFS_VOLUME_NAME)
@@ -238,7 +241,7 @@ func setVolumeInfo(detail *mds.FsDetail, cmd *cobra.Command) *cmderror.CmdError 
 	groupSizeStr := config.GetFlagString(cmd, config.CURVEFS_VOLUME_BLOCKGROUPSIZE)
 	groupSize, err := humanize.ParseBytes(groupSizeStr)
 	if err != nil {
-		errParse := cmderror.ErrParseBytes()
+		errParse := cmderror.ErrParse()
 		errParse.Format(config.CURVEFS_VOLUME_BLOCKGROUPSIZE, groupSizeStr)
 	}
 	bitmapLocationStr := config.GetFlagString(cmd, config.CURVEFS_VOLUME_BITMAPLOCATION)
@@ -249,7 +252,7 @@ func setVolumeInfo(detail *mds.FsDetail, cmd *cobra.Command) *cmderror.CmdError 
 	sliceStr := config.GetFlagString(cmd, config.CURVEFS_VOLUME_SLICESIZE)
 	slicesize, err := humanize.ParseBytes(sliceStr)
 	if err != nil {
-		errParse := cmderror.ErrParseBytes()
+		errParse := cmderror.ErrParse()
 		errParse.Format(config.CURVEFS_VOLUME_SLICESIZE, sliceStr)
 	}
 
@@ -302,7 +305,7 @@ func (fCmd *FsCommand) RunCommand(cmd *cobra.Command, args []string) error {
 	errCreate := cmderror.ErrCreateFs(int(response.GetStatusCode()))
 	row := map[string]string{
 		cobrautil.ROW_FS_NAME: fCmd.Rpc.Request.GetFsName(),
-		cobrautil.ROW_RESULT: errCreate.Message,
+		cobrautil.ROW_RESULT:  errCreate.Message,
 	}
 	if response.GetStatusCode() == mds.FSStatusCode_OK {
 		fsInfo := response.GetFsInfo()

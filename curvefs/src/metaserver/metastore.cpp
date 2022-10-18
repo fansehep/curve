@@ -33,6 +33,7 @@
 #include "rocksdb/utilities/options_util.h"
 
 #include "absl/cleanup/cleanup.h"
+#include "absl/types/optional.h"
 #include "curvefs/proto/metaserver.pb.h"
 #include "curvefs/src/metaserver/partition_clean_manager.h"
 #include "curvefs/src/metaserver/copyset/copyset_node.h"
@@ -109,8 +110,15 @@ bool MetaStoreImpl::Load(const std::string& pathname) {
         }
     }
 
+    auto startCompacts = [this]() {
+        for (auto& part : partitionMap_) {
+            part.second->StartS3Compact();
+        }
+    };
+
     // reload from a previous version, and doesn't have storage checkpoint yet
     if (version <= storage::kDumpFileV2) {
+        startCompacts();
         return true;
     }
 
@@ -120,6 +128,7 @@ bool MetaStoreImpl::Load(const std::string& pathname) {
         return false;
     }
 
+    startCompacts();
     return true;
 }
 
@@ -186,7 +195,7 @@ bool MetaStoreImpl::Save(const std::string& dir,
 bool MetaStoreImpl::ClearInternal() {
     for (auto it = partitionMap_.begin(); it != partitionMap_.end(); it++) {
         TrashManager::GetInstance().Remove(it->first);
-        it->second->ClearS3Compact();
+        it->second->CancelS3Compact();
         PartitionCleanManager::GetInstance().Remove(it->first);
 
         if (!it->second->Clear()) {
@@ -255,7 +264,7 @@ MetaStatusCode MetaStoreImpl::DeletePartition(
         LOG(INFO) << "DeletePartition, partition is deletable, delete it"
                   << ", partitionId = " << partitionId;
         TrashManager::GetInstance().Remove(partitionId);
-        it->second->ClearS3Compact();
+        it->second->CancelS3Compact();
         PartitionCleanManager::GetInstance().Remove(partitionId);
         partitionMap_.erase(it);
         response->set_statuscode(MetaStatusCode::OK);
@@ -272,7 +281,7 @@ MetaStatusCode MetaStoreImpl::DeletePartition(
                                                  copysetNode_);
         it->second->SetStatus(PartitionStatus::DELETING);
         TrashManager::GetInstance().Remove(partitionId);
-        it->second->ClearS3Compact();
+        it->second->CancelS3Compact();
     } else {
         LOG(INFO) << "DeletePartition, partition is already deleting"
                   << ", partitionId = " << partitionId;
@@ -291,8 +300,6 @@ bool MetaStoreImpl::GetPartitionInfoList(
     if (ret == 0) {
         for (const auto& it : partitionMap_) {
             PartitionInfo partitionInfo = it.second->GetPartitionInfo();
-            partitionInfo.set_inodenum(it.second->GetInodeNum());
-            partitionInfo.set_dentrynum(it.second->GetDentryNum());
             partitionInfoList->push_back(std::move(partitionInfo));
         }
         rwLock_.Unlock();
@@ -447,7 +454,12 @@ MetaStatusCode MetaStoreImpl::CreateInode(const CreateInodeRequest* request,
     param.type = request->type();
     param.parent = request->parent();
     param.rdev = request->rdev();
+    if (request->has_create()) {
+        param.timestamp = absl::make_optional<struct timespec>(
+            {request->create().sec(), request->create().nsec()});
+    }
     param.symlink = "";
+
     if (param.type == FsFileType::TYPE_SYM_LINK) {
         if (!request->has_symlink()) {
             response->set_statuscode(MetaStatusCode::SYM_LINK_EMPTY);
@@ -488,6 +500,10 @@ MetaStatusCode MetaStoreImpl::CreateRootInode(
     param.type = FsFileType::TYPE_DIRECTORY;
     param.rdev = 0;
     param.parent = 0;
+    if (request->has_create()) {
+        param.timestamp = absl::make_optional<struct timespec>(
+            {request->create().sec(), request->create().nsec()});
+    }
 
     ReadLockGuard readLockGuard(rwLock_);
     std::shared_ptr<Partition> partition = GetPartition(request->partitionid());

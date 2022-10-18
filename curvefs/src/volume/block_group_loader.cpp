@@ -32,7 +32,7 @@
 #include "curvefs/src/volume/allocator.h"
 #include "curvefs/src/volume/block_device_client.h"
 #include "curvefs/src/volume/block_group_updater.h"
-#include "curvefs/src/volume/utils.h"
+#include "curvefs/src/volume/common.h"
 #include "src/common/bitmap.h"
 #include "src/common/fast_align.h"
 
@@ -143,7 +143,7 @@ bool BlockGroupBitmapLoader::LoadBitmap(std::unique_ptr<Bitmap>* bitmap,
         }
     } else {
         // we don't have mkfs now, so we clear the bitmap at first
-        std::memset(data.get(), 0, bitmapRange->length);
+        memset(data.get(), 0, bitmapRange->length);
         ssize_t err = blockDev_->Write(data.get(), bitmapRange->offset,
                                        bitmapRange->length);
         if (err != static_cast<ssize_t>(bitmapRange->length)) {

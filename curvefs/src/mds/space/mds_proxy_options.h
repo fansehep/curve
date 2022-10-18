@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021 NetEase Inc.
+ *  Copyright (c) 2022 NetEase Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -14,32 +14,30 @@
  *  limitations under the License.
  */
 
-/**
+/*
  * Project: curve
- * File Created: Fri Jul 16 21:22:40 CST 2021
+ * Date: Thursday Jul 14 20:24:41 CST 2022
  * Author: wuhanqing
  */
 
-#ifndef CURVEFS_SRC_VOLUME_UTILS_H_
-#define CURVEFS_SRC_VOLUME_UTILS_H_
+#ifndef CURVEFS_SRC_MDS_SPACE_MDS_PROXY_OPTIONS_H_
+#define CURVEFS_SRC_MDS_SPACE_MDS_PROXY_OPTIONS_H_
 
-#include <iosfwd>
+#include <string>
 #include <vector>
 
-#include "curvefs/src/volume/common.h"
+#include "src/client/config_info.h"
 
 namespace curvefs {
-namespace volume {
+namespace mds {
+namespace space {
 
-std::ostream& operator<<(std::ostream& os, const Extent& e);
+struct MdsProxyOptions {
+    curve::client::MetaServerOption option;
+};
 
-std::ostream& operator<<(std::ostream& os, const std::vector<Extent>& es);
-
-std::ostream& operator<<(std::ostream& os, const AllocateHint& hint);
-
-std::ostream& operator<<(std::ostream& os, AllocateType type);
-
-}  // namespace volume
+}  // namespace space
+}  // namespace mds
 }  // namespace curvefs
 
-#endif  // CURVEFS_SRC_VOLUME_UTILS_H_
+#endif  // CURVEFS_SRC_MDS_SPACE_MDS_PROXY_OPTIONS_H_

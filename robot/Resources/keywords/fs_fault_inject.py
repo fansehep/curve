@@ -306,9 +306,9 @@ def test_kill_process(process_name,num=1):
 def test_start_process(process_name,host=None):
     try:
         if host == None:
-            cmd = "/home/nbs/.curveadm/bin/curveadm start --role=%s"%process_name
+            cmd = "echo 'yes' | /home/nbs/.curveadm/bin/curveadm start --role=%s"%process_name
         else:
-            cmd = "/home/nbs/.curveadm/bin/curveadm start --role=%s --host=%s"%(process_name,host)
+            cmd = "echo 'yes' | /home/nbs/.curveadm/bin/curveadm start --role=%s --host=%s"%(process_name,host)
         ret = shell_operator.run_exec(cmd)
         assert ret == 0 ,"start %s fail"%process_name
     except Exception as e:
@@ -344,7 +344,7 @@ def wait_op_finish():
 def check_fs_io_error():
     test_client = config.fs_test_client[0]
     ssh = shell_operator.create_ssh_connect(test_client, 1046, config.abnormal_user)
-    ori_cmd = "sudo grep \'error\' /var/log/kern.log -R | grep -v libpthread"
+    ori_cmd = "sudo grep \'io error\' /var/log/kern.log -R | grep -v libpthread"
     rs = shell_operator.ssh_exec(ssh, ori_cmd)
     if rs[1] != []:
         ori_cmd = "sudo logrotate -vf /etc/logrotate.d/rsyslog"
@@ -475,7 +475,7 @@ def test_fs_process_loss_package(process_name,percent):
 def test_out_metaserver_copyset():
     test_client = config.fs_test_client[0]
     ssh = shell_operator.create_ssh_connect(test_client, 1046, config.abnormal_user)
-    ori_cmd = "/home/nbs/.curveadm/bin/curveadm status --role=metaserver |grep metaserver| awk '{print $1}'"
+    ori_cmd = "/home/nbs/.curveadm/bin/curveadm status --role=metaserver -sv |grep metaserver| awk '{print $1}'"
     rs = shell_operator.run_exec2(ori_cmd)
     logger.info("rs is %s"%rs)
     rs = rs.split('\n')
@@ -575,7 +575,7 @@ def mount_umount_test():
         time.sleep(30)
         check_fuse_mount_success(test_dir)
         multi_mdtest_exec(ssh,test_dir[0])
-        ori_cmd = "sudo /home/nbs/.curveadm/bin/curveadm umount " + config.fs_mount_path + test_dir[0]
+        ori_cmd = "/home/nbs/.curveadm/bin/curveadm umount " + config.fs_mount_path + test_dir[0]
         rs = shell_operator.ssh_exec(ssh, ori_cmd)
         assert rs[3] == 0,"umount %s fail,error is %s"%(test_dir,rs[1])
         wait_fuse_exit(test_dir[0])
@@ -617,5 +617,39 @@ def stop_cto_file_md5check():
         assert t.exitcode == 0,"cto md5check fail"
         result = t.get_result()
         assert result  == config.md5_check[0],"cto md5 check fail,ont mount ponit is %s,other is %s"%(config.md5_check[0],result)
+    except:
+        raise
+
+def start_pjdtest_cmd(pjd_path):
+    try:
+        test_dir = config.fs_mount_path
+        workspace = test_dir + pjd_path
+        test_client = config.fs_test_client[0]
+        ssh = shell_operator.create_ssh_connect(test_client, 1046, config.abnormal_user)
+        ori_cmd = "cd %s && sudo prove -r %s > result.txt"%(workspace,pjdtest_source_path)
+        rs = shell_operator.ssh_exec(ssh, ori_cmd)
+        logger.info("pjdtest result is %s"%rs[1])
+        assert rs[3] == 0,"pjdtest fail,result is %s"%rs[2]
+        ori_cmd = "cd %s && cat result.txt |grep 'Failed:'"%workspace
+        rs = shell_operator.ssh_exec(ssh, ori_cmd)
+        logger.debug("pjdtest result is %s"%rs[1])
+        return rs[1]
+    except:
+        raise
+
+def start_pjdtest(pjdfs):
+    thread = mythread.runThread(start_pjdtest_cmd,pjdfs)
+    logger.debug("start pjdtest")
+    config.fs_pjdtest_thread = thread
+    thread.start()
+
+def check_pjdtest_result():
+    try:
+        if config.fs_pjdtest_thread == []:
+            assert False," pjdtest not up"
+        t = config.fs_pjdtest_thread
+        assert t.exitcode == 0,"pjdtest fail"
+        result = t.get_result()
+        assert result == [],"pjdtest have some failure cases,%s"%result
     except:
         raise

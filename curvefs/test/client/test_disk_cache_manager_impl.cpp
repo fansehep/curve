@@ -96,6 +96,9 @@ class TestDiskCacheManagerImpl : public ::testing::Test {
 
 TEST_F(TestDiskCacheManagerImpl, Init) {
     S3ClientAdaptorOption s3AdaptorOption;
+    s3AdaptorOption.diskCacheOpt.forceFlush = false;
+    s3AdaptorOption.diskCacheOpt.threads = 0;
+
     EXPECT_CALL(*diskCacheManager_, Init(_, _)).WillOnce(Return(-1));
     int ret = diskCacheManagerImpl_->Init(s3AdaptorOption);
     ASSERT_EQ(-1, ret);
@@ -126,6 +129,7 @@ TEST_F(TestDiskCacheManagerImpl, WriteClosure) {
     EXPECT_CALL(*diskCacheManager_, IsDiskCacheFull()).WillOnce(Return(false));
     EXPECT_CALL(*diskCacheWrite_, WriteDiskFile(_, _, _, _))
         .WillOnce(Return(0));
+    EXPECT_CALL(*diskCacheManager_, IsDiskUsedInited()).WillOnce(Return(true));
     EXPECT_CALL(*diskCacheWrite_, GetCacheIoFullDir()).WillOnce(Return(buf));
     EXPECT_CALL(*diskCacheRead_, GetCacheIoFullDir()).WillOnce(Return(buf));
     EXPECT_CALL(*diskCacheRead_, LinkWriteToRead(_, _, _)).WillOnce(Return(0));
@@ -138,8 +142,8 @@ TEST_F(TestDiskCacheManagerImpl, Write) {
     std::string fileName = "test";
     std::string buf = "test";
     int ret;
-    EXPECT_CALL(*client_, Upload(_, _, _)).WillOnce(Return(-1));
     EXPECT_CALL(*diskCacheManager_, IsDiskCacheFull()).WillOnce(Return(true));
+    EXPECT_CALL(*diskCacheManager_, IsDiskUsedInited()).WillOnce(Return(true));
     ret = diskCacheManagerImpl_->Write(fileName,
                                        const_cast<char *>(buf.c_str()), 10);
     ASSERT_EQ(-1, ret);
@@ -147,7 +151,7 @@ TEST_F(TestDiskCacheManagerImpl, Write) {
     EXPECT_CALL(*diskCacheManager_, IsDiskCacheFull()).WillOnce(Return(false));
     EXPECT_CALL(*diskCacheWrite_, WriteDiskFile(_, _, _, _))
         .WillOnce(Return(-1));
-    EXPECT_CALL(*client_, Upload(_, _, _)).WillOnce(Return(-1));
+    EXPECT_CALL(*diskCacheManager_, IsDiskUsedInited()).WillOnce(Return(true));
     ret = diskCacheManagerImpl_->Write(fileName,
                                        const_cast<char *>(buf.c_str()), 10);
     ASSERT_EQ(-1, ret);
@@ -158,7 +162,7 @@ TEST_F(TestDiskCacheManagerImpl, Write) {
     EXPECT_CALL(*diskCacheWrite_, GetCacheIoFullDir()).WillOnce(Return(buf));
     EXPECT_CALL(*diskCacheRead_, GetCacheIoFullDir()).WillOnce(Return(buf));
     EXPECT_CALL(*diskCacheRead_, LinkWriteToRead(_, _, _)).WillOnce(Return(-1));
-    EXPECT_CALL(*client_, Upload(_, _, _)).WillOnce(Return(-1));
+    EXPECT_CALL(*diskCacheManager_, IsDiskUsedInited()).WillOnce(Return(true));
     ret = diskCacheManagerImpl_->Write(fileName,
                                        const_cast<char *>(buf.c_str()), 10);
     ASSERT_EQ(-1, ret);
@@ -170,12 +174,7 @@ TEST_F(TestDiskCacheManagerImpl, Write) {
     EXPECT_CALL(*diskCacheRead_, GetCacheIoFullDir()).WillOnce(Return(buf));
     EXPECT_CALL(*diskCacheRead_, LinkWriteToRead(_, _, _)).WillOnce(Return(0));
     EXPECT_CALL(*diskCacheWrite_, AsyncUploadEnqueue(_)).WillOnce(Return());
-    ret = diskCacheManagerImpl_->Write(fileName,
-                                       const_cast<char *>(buf.c_str()), 10);
-    ASSERT_EQ(0, ret);
-
-    EXPECT_CALL(*diskCacheManager_, IsDiskCacheFull()).WillOnce(Return(true));
-    EXPECT_CALL(*client_, Upload(_, _, _)).WillOnce(Return(0));
+    EXPECT_CALL(*diskCacheManager_, IsDiskUsedInited()).WillOnce(Return(true));
     ret = diskCacheManagerImpl_->Write(fileName,
                                        const_cast<char *>(buf.c_str()), 10);
     ASSERT_EQ(0, ret);
@@ -222,11 +221,13 @@ TEST_F(TestDiskCacheManagerImpl, IsCached) {
 TEST_F(TestDiskCacheManagerImpl, UmountDiskCache) {
     EXPECT_CALL(*diskCacheWrite_, UploadAllCacheWriteFile())
         .WillOnce(Return(-1));
+    diskCacheManagerImpl_->InitMetrics("test");
     int ret = diskCacheManagerImpl_->UmountDiskCache();
     ASSERT_EQ(0, ret);
 
     EXPECT_CALL(*diskCacheWrite_, UploadAllCacheWriteFile())
         .WillOnce(Return(0));
+    diskCacheManagerImpl_->InitMetrics("test");
     ret = diskCacheManagerImpl_->UmountDiskCache();
     ASSERT_EQ(0, ret);
 }
@@ -234,12 +235,13 @@ TEST_F(TestDiskCacheManagerImpl, UmountDiskCache) {
 TEST_F(TestDiskCacheManagerImpl, WriteReadDirect) {
     std::string fileName = "test";
     std::string buf = "test";
-    EXPECT_CALL(*diskCacheManager_, IsDiskCacheFull()).WillOnce(Return(true));
+    EXPECT_CALL(*diskCacheManager_, IsDiskUsedInited()).WillOnce(Return(false));
     int ret = diskCacheManagerImpl_->WriteReadDirect(
         fileName, const_cast<char *>(buf.c_str()), 10);
     ASSERT_EQ(-1, ret);
 
     EXPECT_CALL(*diskCacheManager_, IsDiskCacheFull()).WillOnce(Return(false));
+    EXPECT_CALL(*diskCacheManager_, IsDiskUsedInited()).WillOnce(Return(true));
     EXPECT_CALL(*diskCacheManager_, WriteReadDirect(_, _, _))
         .WillOnce(Return(-1));
     ret = diskCacheManagerImpl_->WriteReadDirect(
@@ -247,6 +249,7 @@ TEST_F(TestDiskCacheManagerImpl, WriteReadDirect) {
     ASSERT_EQ(-1, ret);
 
     EXPECT_CALL(*diskCacheManager_, IsDiskCacheFull()).WillOnce(Return(false));
+    EXPECT_CALL(*diskCacheManager_, IsDiskUsedInited()).WillOnce(Return(true));
     EXPECT_CALL(*diskCacheManager_, WriteReadDirect(_, _, _))
         .WillOnce(Return(0));
     ret = diskCacheManagerImpl_->WriteReadDirect(

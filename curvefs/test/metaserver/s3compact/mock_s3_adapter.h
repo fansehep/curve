@@ -20,8 +20,8 @@
 > Created Time: Tue 7 Sept 2021
  ************************************************************************/
 
-#ifndef CURVEFS_TEST_METASERVER_MOCK_S3_ADAPTER_H_
-#define CURVEFS_TEST_METASERVER_MOCK_S3_ADAPTER_H_
+#ifndef CURVEFS_TEST_METASERVER_S3COMPACT_MOCK_S3_ADAPTER_H_
+#define CURVEFS_TEST_METASERVER_S3COMPACT_MOCK_S3_ADAPTER_H_
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -56,8 +56,7 @@ class MockS3Adapter : public S3Adapter {
 
     MOCK_METHOD1(Init, void(const std::string&));
     MOCK_METHOD0(Deinit, void());
-    MOCK_METHOD4(Reinit, void(const std::string&, const std::string&,
-                              const std::string&, S3AdapterOption opt));
+    MOCK_METHOD1(Reinit, void(const S3AdapterOption& opt));
     MOCK_METHOD0(GetS3Ak, std::string());
     MOCK_METHOD0(GetS3Sk, std::string());
     MOCK_METHOD0(GetS3Endpoint, std::string());
@@ -68,4 +67,4 @@ class MockS3Adapter : public S3Adapter {
 };
 }  // namespace metaserver
 }  // namespace curvefs
-#endif  // CURVEFS_TEST_METASERVER_MOCK_S3_ADAPTER_H_
+#endif  // CURVEFS_TEST_METASERVER_S3COMPACT_MOCK_S3_ADAPTER_H_

@@ -43,6 +43,7 @@
 #include "src/common/interruptible_sleeper.h"
 #include "curvefs/src/client/inode_wrapper.h"
 #include "src/common/concurrent/name_lock.h"
+#include "curvefs/src/client/common/config.h"
 
 using ::curve::common::LRUCache;
 using ::curve::common::CacheMetrics;
@@ -62,6 +63,7 @@ using rpcclient::MetaServerClientDone;
 using rpcclient::BatchGetInodeAttrDone;
 using curve::common::CountDownEvent;
 using metric::S3ChunkInfoMetric;
+using common::RefreshDataOption;
 
 class InodeAttrCache {
  public:
@@ -72,7 +74,7 @@ class InodeAttrCache {
         curve::common::LockGuard lg(iAttrCacheMutex_);
         auto iter = iAttrCache_.find(parentId);
         if (iter != iAttrCache_.end()) {
-            *imap = iter->second;
+            imap->insert(iter->second.begin(), iter->second.end());
             return true;
         }
         return false;
@@ -100,6 +102,14 @@ class InodeAttrCache {
                 << size << ", after = " << iAttrCache_.size();
     }
 
+    void Remove(uint64_t parentId, uint64_t inodeId) {
+        curve::common::LockGuard lg(iAttrCacheMutex_);
+        auto iter = iAttrCache_.find(parentId);
+        if (iter != iAttrCache_.end()) {
+            iter->second.erase(inodeId);
+        }
+    }
+
  private:
     // inodeAttr cache; <parentId, <inodeId, inodeAttr>>
     std::map<uint64_t, std::map<uint64_t, InodeAttr>> iAttrCache_;
@@ -117,14 +127,18 @@ class InodeCacheManager {
     }
 
     virtual CURVEFS_ERROR Init(uint64_t cacheSize, bool enableCacheMetrics,
-                               uint32_t flushPeriodSec) = 0;
+                               uint32_t flushPeriodSec,
+                               RefreshDataOption option) = 0;
 
     virtual void Run() = 0;
 
     virtual void Stop() = 0;
 
-    virtual CURVEFS_ERROR GetInode(uint64_t inodeId,
-        std::shared_ptr<InodeWrapper> &out) = 0;   // NOLINT
+    virtual CURVEFS_ERROR
+    GetInode(uint64_t inodeId,
+             std::shared_ptr<InodeWrapper> &out) = 0;  // NOLINT
+
+    virtual CURVEFS_ERROR RefreshInode(uint64_t inodeId) = 0;
 
     virtual CURVEFS_ERROR GetInodeAttr(uint64_t inodeId, InodeAttr *out) = 0;
 
@@ -134,7 +148,7 @@ class InodeCacheManager {
 
     virtual CURVEFS_ERROR BatchGetInodeAttrAsync(
         uint64_t parentId,
-        const std::set<uint64_t> &inodeIds,
+        std::set<uint64_t> *inodeIds,
         std::map<uint64_t, InodeAttr> *attrs) = 0;
 
     virtual CURVEFS_ERROR BatchGetXAttr(std::set<uint64_t> *inodeIds,
@@ -179,7 +193,8 @@ class InodeCacheManagerImpl : public InodeCacheManager,
         iAttrCache_(nullptr) {}
 
     CURVEFS_ERROR Init(uint64_t cacheSize, bool enableCacheMetrics,
-                       uint32_t flushPeriodSec) override {
+                       uint32_t flushPeriodSec,
+                       RefreshDataOption option) override {
         if (enableCacheMetrics) {
             iCache_ = std::make_shared<
                 LRUCache<uint64_t, std::shared_ptr<InodeWrapper>>>(0,
@@ -189,6 +204,7 @@ class InodeCacheManagerImpl : public InodeCacheManager,
                 LRUCache<uint64_t, std::shared_ptr<InodeWrapper>>>(0);
         }
         maxCacheSize_ = cacheSize;
+        option_ = option;
         flushPeriodSec_ = flushPeriodSec;
         iAttrCache_ = std::make_shared<InodeAttrCache>();
         s3ChunkInfoMetric_ = std::make_shared<S3ChunkInfoMetric>();
@@ -215,7 +231,9 @@ class InodeCacheManagerImpl : public InodeCacheManager,
     }
 
     CURVEFS_ERROR GetInode(uint64_t inodeId,
-        std::shared_ptr<InodeWrapper> &out) override;
+                           std::shared_ptr<InodeWrapper> &out) override;
+
+    CURVEFS_ERROR RefreshInode(uint64_t inodeId) override;
 
     CURVEFS_ERROR GetInodeAttr(uint64_t inodeId, InodeAttr *out) override;
 
@@ -223,7 +241,7 @@ class InodeCacheManagerImpl : public InodeCacheManager,
         std::list<InodeAttr> *attrs) override;
 
     CURVEFS_ERROR BatchGetInodeAttrAsync(uint64_t parentId,
-        const std::set<uint64_t> &inodeIds,
+        std::set<uint64_t> *inodeIds,
         std::map<uint64_t, InodeAttr> *attrs = nullptr) override;
 
     CURVEFS_ERROR BatchGetXAttr(std::set<uint64_t> *inodeIds,
@@ -253,6 +271,8 @@ class InodeCacheManagerImpl : public InodeCacheManager,
  private:
     virtual void FlushInodeBackground();
     void TrimIcache(uint64_t trimSize);
+    CURVEFS_ERROR RefreshData(std::shared_ptr<InodeWrapper> &inode,  // NOLINT
+                              bool streaming = true);
 
  private:
     std::shared_ptr<MetaServerClient> metaClient_;
@@ -270,6 +290,7 @@ class InodeCacheManagerImpl : public InodeCacheManager,
     curve::common::GenericNameLock<Mutex> asyncNameLock_;
 
     uint64_t maxCacheSize_;
+    RefreshDataOption option_;
     uint32_t flushPeriodSec_;
     Thread flushThread_;
     InterruptibleSleeper sleeper_;

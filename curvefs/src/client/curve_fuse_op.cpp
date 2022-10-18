@@ -23,6 +23,9 @@
 
 #include <string>
 #include <memory>
+#include <cstring>
+#include <utility>
+#include <vector>
 
 #include "curvefs/src/client/curve_fuse_op.h"
 #include "curvefs/src/client/fuse_client.h"
@@ -52,6 +55,7 @@ using ::curvefs::client::rpcclient::MDSBaseClient;
 using ::curvefs::client::metric::ClientOpMetric;
 using ::curvefs::common::LatencyUpdater;
 using ::curvefs::client::metric::InflightGuard;
+using ::curvefs::client::common::FileHandle;
 
 using ::curvefs::common::FLAGS_vlog_level;
 
@@ -241,6 +245,9 @@ void FuseReplyErrByErrCode(fuse_req_t req, CURVEFS_ERROR errcode) {
     case CURVEFS_ERROR::NODATA:
         fuse_reply_err(req, ENODATA);
         break;
+    case CURVEFS_ERROR::EXISTS:
+        fuse_reply_err(req, EEXIST);
+        break;
     default:
         fuse_reply_err(req, EIO);
         break;
@@ -271,6 +278,62 @@ void FuseOpGetAttr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
         return;
     }
     fuse_reply_attr(req, &attr, g_fuseClientOption->attrTimeOut);
+}
+
+int AddWarmupTask(const std::string& type, const std::string& path) {
+    int ret = 0;
+    switch (curvefs::client::common::GetWarmupType(type)) {
+        case curvefs::client::common::WarmupType::kWarmupTypeList:
+            g_ClientInstance->PutWarmTask(path);
+            break;
+        case curvefs::client::common::WarmupType::kWarmupTypeSingle:
+            g_ClientInstance->FetchDentryEnqueue(path);
+            break;
+        default:
+            // not support add warmup type (warmup single file/dir or filelist)
+            LOG(ERROR) << "not support warmup type, only support single/list";
+            ret = ERANGE;
+    }
+    return ret;
+}
+
+int Warmup(const std::string& name, const std::string& value) {
+    // warmup
+    std::vector<std::string> opTypePath;
+    curve::common::SplitString(value, "\n", &opTypePath);
+    if (opTypePath.size() != 3) {
+        LOG(ERROR) << name << " has invalid xattr value " << value;
+        return ERANGE;
+    }
+    int ret = 0;
+    switch (curvefs::client::common::GetWarmupOpType(opTypePath[0])) {
+        case curvefs::client::common::WarmupOpType::kWarmupOpAdd:
+            ret = AddWarmupTask(opTypePath[1], opTypePath[2]);
+            if (ret != 0) {
+                LOG(ERROR) << name << " has invalid xattr value " << value;
+            }
+            break;
+        default:
+            LOG(ERROR) << name << " has invalid xattr value " << value;
+            ret = ERANGE;
+    }
+    return ret;
+}
+
+void FuseOpSetXattr(fuse_req_t req, fuse_ino_t ino, const char* name,
+                    const char* value, size_t size, int flags) {
+    // only support "curvefs.warmup.op" xattr
+    std::string xattrValue(value, size);
+    VLOG(9) << "FuseOpSetXattr"
+            << " ino " << ino << " name " << name << " value " << xattrValue
+            << " flags " << flags;
+    int code = ENOTSUP;
+    if (strcmp(name, curvefs::client::common::kCurveFsWarmupXAttr) == 0) {
+        // warmup
+        code = Warmup(name, xattrValue);
+    }
+    fuse_reply_err(req, code);
+    VLOG(9) << "FuseOpSetXattr done";
 }
 
 void FuseOpGetXattr(fuse_req_t req, fuse_ino_t ino, const char *name,
@@ -355,6 +418,8 @@ void FuseOpOpen(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
         FuseReplyErrByErrCode(req, ret);
         return;
     }
+    // set fh to 1 to indicate needn't refresh inode when file is still opened
+    fi->fh = static_cast<uint64_t>(FileHandle::kKeepCache);
     fuse_reply_open(req, fi);
 }
 
